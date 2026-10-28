@@ -1,0 +1,46 @@
+{
+  "name": "wordpacer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "本地单词复习节奏管理器 —— 录入今天背的词，按遗忘曲线告诉你下次该看哪些",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@tailwindcss/oxide"
+    ]
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "tauri": "node ./scripts/tauri-run.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.3",
+    "@tauri-apps/plugin-fs": "^2.7.1",
+    "@tauri-apps/plugin-sql": "^2.6.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "ts-fsrs": "5.4.2",
+    "zustand": "5.0.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.14",
+    "@tauri-apps/cli": "2.12.4",
+    "@testing-library/react": "16.3.0",
+    "@types/node": "^20.19.43",
+    "@types/react": "19.1.16",
+    "@types/react-dom": "19.1.9",
+    "@vitejs/plugin-react": "4.7.0",
+    "jsdom": "26.1.0",
+    "tailwindcss": "4.1.14",
+    "typescript": "5.9.3",
+    "vite": "6.4.3",
+    "vitest": "3.2.4"
+  }
+}

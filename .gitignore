@@ -1,0 +1,29 @@
+# 依赖与构建产物
+node_modules/
+dist/
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# 个人数据：绝不入库
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+/data/
+/exports/
+*.json.bak
+backup/
+
+# 密钥
+.env
+.env.*
+.dev.vars
+src-tauri/.env
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
