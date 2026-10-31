@@ -73,21 +73,21 @@ export function SearchPage() {
     const today = todayKey(boundary);
     const dueDay = detail.fsrs_due === null ? null : dayKey(new Date(detail.fsrs_due), boundary);
     return (
-      <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-auto px-8 py-8">
+      <div className="mx-auto flex h-full max-w-2xl flex-col gap-4 overflow-auto px-8 py-8">
         <button
           type="button"
           onClick={() => setDetail(null)}
-          className="self-start text-sm text-paper-dim hover:text-accent"
+          className="btn-link self-start"
         >
           ← {t.searchPage.back}
         </button>
 
         <div className="flex items-baseline gap-3">
-          <span className="text-3xl font-light text-paper">{detail.headword}</span>
-          <span className="text-xs text-paper-dim">{statusLabel(detail.status)}</span>
+          <span className="word text-3xl text-paper">{detail.headword}</span>
+          <span className="tag">{statusLabel(detail.status)}</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-sm text-paper-dim">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-ink-line/60 bg-card/40 p-4 text-sm text-paper-dim">
           <div>
             {t.searchPage.lastReview}：
             {detail.fsrs_last_review === null
@@ -97,8 +97,8 @@ export function SearchPage() {
           <div>
             {t.searchPage.nextDue}：{dueDay === null ? "—" : describeDay(dueDay, today)}
           </div>
-          <div>复习次数：{detail.fsrs_reps}</div>
-          <div>遗忘次数：{detail.fsrs_lapses}</div>
+          <div>{t.searchPage.reps}：<span className="text-paper">{detail.fsrs_reps}</span></div>
+          <div>{t.searchPage.lapses}：<span className="text-paper">{detail.fsrs_lapses}</span></div>
         </div>
 
         <div className="mt-2">
@@ -110,17 +110,17 @@ export function SearchPage() {
               <li key={s.id} className="flex items-center gap-2 text-sm">
                 <span className="text-paper">{s.meaning_cn}</span>
                 {s.layer === 2 && (
-                  <span className="rounded border border-ink-line px-1.5 py-0.5 text-[10px] text-paper-dim">
+                  <span className="tag">
                     {t.review.supplement}
                   </span>
                 )}
                 {s.origin === "ai" && (
-                  <span className="text-[10px] text-paper-dim/70">AI</span>
+                  <span className="text-xs text-paper-faint">AI</span>
                 )}
               </li>
             ))}
             {detail.senses.length === 0 && (
-              <li className="text-sm text-paper-dim">（无释义）</li>
+              <li className="text-sm text-paper-faint">（无释义）</li>
             )}
           </ul>
         </div>
@@ -133,20 +133,20 @@ export function SearchPage() {
               if (e.key === "Enter") void addSense();
             }}
             placeholder={t.searchPage.addSensePlaceholder}
-            className="rounded-md border border-ink-line bg-ink-soft px-3 py-2 text-sm text-paper outline-none placeholder:text-paper-dim/50 focus:border-accent"
+            className="input"
           />
           <div className="flex gap-3">
             <button
               type="button"
               onClick={() => void addSense()}
-              className="rounded-md border border-ink-line px-4 py-2 text-sm text-paper hover:border-accent hover:text-accent"
+              className="btn-ghost"
             >
               {t.searchPage.add}
             </button>
             <button
               type="button"
               onClick={() => void reset()}
-              className="rounded-md border border-ink-line px-4 py-2 text-sm text-paper-dim hover:border-accent hover:text-accent"
+              className="btn-ghost"
             >
               {t.searchPage.reset}
             </button>
@@ -164,7 +164,7 @@ export function SearchPage() {
         onChange={(e) => setQ(e.target.value)}
         placeholder={t.searchPage.placeholder}
         autoFocus
-        className="rounded-md border border-ink-line bg-ink-soft px-4 py-2.5 text-sm text-paper outline-none placeholder:text-paper-dim/50 focus:border-accent"
+        className="input"
       />
 
       {hits === null ? (
@@ -174,21 +174,21 @@ export function SearchPage() {
           {q.trim() === "" ? t.searchPage.empty : t.searchPage.noResult}
         </div>
       ) : (
-        <ul className="flex-1 divide-y divide-ink-line overflow-auto rounded-lg border border-ink-line">
+        <ul className="@container flex-1 divide-y divide-ink-line/60 overflow-auto rounded-lg border border-line-strong bg-card/30">
           {hits.map((h) => (
             <li key={h.id}>
               <button
                 type="button"
                 onClick={() => void openDetail(h.id)}
-                className="flex w-full items-baseline gap-3 px-4 py-3 text-left transition hover:bg-ink-soft"
+                className="flex w-full items-baseline gap-3 px-4 py-3 text-left transition-colors hover:bg-row-hover"
               >
-                <span className="w-42 shrink-0 truncate text-paper">{h.headword}</span>
+                <span className="w-24 shrink-0 truncate text-paper @[560px]:w-40">{h.headword}</span>
                 <span className="flex-1 truncate text-sm text-paper-dim">{h.firstMeaning}</span>
-                <span className="shrink-0 text-xs text-paper-dim/70">{statusLabel(h.status)}</span>
-                <span className="w-28 shrink-0 text-right text-xs tabular-nums text-paper-dim/70">
+                <span className="shrink-0 text-xs text-paper-faint">{statusLabel(h.status)}</span>
+                <span className="hidden w-28 shrink-0 text-right text-xs tabular-nums text-paper-faint @[520px]:block">
                   {h.lastReviewDay ?? t.searchPage.never}
                 </span>
-                <span className="w-24 shrink-0 text-right text-xs tabular-nums text-paper-dim/50">
+                <span className="hidden w-24 shrink-0 text-right text-xs tabular-nums text-paper-faint @[620px]:block">
                   {h.fsrs_due_day ?? "—"}
                 </span>
               </button>

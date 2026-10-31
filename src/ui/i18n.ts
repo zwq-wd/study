@@ -80,6 +80,8 @@ export const t = {
     add: "添加",
     reset: "重新激活",
     resetDone: "已重新激活，下次打开会排进复习。",
+    reps: "复习次数",
+    lapses: "遗忘次数",
     detail: "词条详情",
     back: "返回",
   },

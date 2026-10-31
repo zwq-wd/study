@@ -1,16 +1,48 @@
 @import "tailwindcss";
 
-/* 深色为默认底色，晚上背单词不刺眼（§五）。
+/* ─── 台灯下的单词卡 ────────────────────────────────────────────
+   桌面是一盏灯：光源在左上方，越往外越暗。
+   卡面是纸：浮起一层，用明度和 hairline 边分离，不用阴影。
+   墨是字：paper / paper-dim / paper-faint 三档。
+   金只出现在三个地方：今日到期数字、主按钮、「不会」标记。
    不做主题切换按钮，保持安静。 */
+
 @theme {
-  --color-ink: #171a21;
-  --color-ink-soft: #1e222b;
-  --color-ink-line: #2b303c;
-  --color-paper: #e9e6df;
-  --color-paper-dim: #9aa0ad;
-  --color-accent: #e8c46a;
-  --color-accent-dim: #b99748;
+  /* 桌面 */
+  --color-desk-1: #3d3325;
+  --color-desk-2: #2f281e;
+  --color-desk-3: #262018;
+  --color-desk-4: #1d1811;
+  --color-ink: #151210;
+
+  /* 卡面 / 凹槽 */
+  --color-card: #241f18;
+  --color-card-lift: #2a2419;
+  --color-well: #14110e;
+  --color-row-hover: #2e281d;
+
+  /* 线 */
+  --color-ink-line: #3a342b;
+  --color-line-strong: #4a4234;
+
+  /* 墨 */
+  --color-paper: #ede8df;
+  --color-paper-dim: #aaa294;
+  --color-paper-faint: #a59d8e;
+
+  /* 金 */
+  --color-accent: #d9b45f;
+  --color-accent-hover: #e6c675;
+
+  /* 语义色（取代 Tailwind 默认的 red-400 / amber-300） */
+  --color-warn: #d8b878;
+  --color-danger: #d98d7d;
+  --color-good: #96b98a;
+
+  /* 字体 */
   --font-sans: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  /* 只给英文单词用；中文永远不碰衬线（屏上会发虚） */
+  --font-serif: "Sitka Text", Georgia, Cambria, "Times New Roman", serif;
 }
 
 html,
@@ -21,25 +53,91 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-ink);
   color: var(--color-paper);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+
+  /* 灯：光源在 40% 22%，半径放到 120% 让衰减铺满整窗 */
+  background-color: var(--color-ink);
+  background-image: radial-gradient(
+    ellipse 120% 100% at 40% 22%,
+    var(--color-desk-1) 0%,
+    var(--color-desk-2) 22%,
+    var(--color-desk-3) 45%,
+    var(--color-desk-4) 68%,
+    var(--color-ink) 100%
+  );
+  background-attachment: fixed;
 }
 
-/* 中文淡入 120 ms，不做翻转动画（§9.2） */
-@keyframes fade-in-120 {
+/* ─── 焦点：键盘用户必须看得见自己在哪里 ─────────────────────── */
+/* 复习页全靠键盘，但没有焦点提示是不可接受的。 */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* 输入框的焦点同时保留边框变色作为补充，而不是唯一提示 */
+input:focus-visible,
+textarea:focus-visible {
+  outline-offset: 1px;
+}
+
+/* ─── 组件层：把散落在 5 个页面里的长 className 收口 ───────────
+   注意：@apply 只能引用真正的 utility，不能引用本层的自定义类，
+   所以公共部分在每个 .btn-* 里各写一遍。 */
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-md bg-accent px-5 py-2
+           text-sm font-medium text-ink transition-colors duration-150
+           hover:bg-accent-hover disabled:cursor-default disabled:bg-ink-line
+           disabled:text-paper-dim;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-md border border-ink-line
+           px-4 py-2 text-sm text-paper transition-colors duration-150
+           hover:border-accent hover:text-accent disabled:cursor-default
+           disabled:border-ink-line disabled:text-paper-faint;
+  }
+
+  .btn-link {
+    @apply text-sm text-paper-dim underline-offset-4
+           hover:text-accent hover:underline;
+  }
+
+  .input {
+    @apply rounded-md border border-ink-line bg-well px-4 py-2.5 text-sm text-paper
+           outline-none placeholder:text-paper-faint focus:border-accent;
+  }
+
+  .panel {
+    @apply rounded-lg border border-line-strong bg-card;
+  }
+
+  .tag {
+    @apply rounded border border-ink-line px-1.5 py-0.5 text-[11px] leading-none
+           text-paper-dim;
+  }
+}
+
+/* ─── 释义浮现：墨渗开 ─────────────────────────────────────────
+   不做翻转（§9.2 禁翻转，因为翻转要人等）；渗开不用等。 */
+@keyframes ink-in {
   from {
     opacity: 0;
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.fade-in {
-  animation: fade-in-120 ease-out 120ms;
+.ink-in {
+  animation: ink-in cubic-bezier(0.2, 0, 0.2, 1) 160ms both;
 }
 
 /* 复习页字号三档（§9.2：32 / 40 / 52 px） */
@@ -51,6 +149,26 @@ body {
 }
 .word-size-2 {
   font-size: 52px;
+}
+
+/* 英文单词专用：衬线 + 常规字重。
+   衬线自带粗细对比，再加 font-light 会把这层对比抹掉。 */
+.word {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/* 系统要求减少动效时：立刻出现，不要位移 */
+@media (prefers-reduced-motion: reduce) {
+  .ink-in {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 ::-webkit-scrollbar {

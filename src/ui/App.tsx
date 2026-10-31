@@ -31,7 +31,7 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-1 border-b border-ink-line px-6 py-2">
+      <header className="flex items-center gap-1 border-b border-ink-line/60 px-6 py-2">
         <span className="mr-4 text-sm font-medium tracking-wide text-paper-dim">{t.appName}</span>
         {NAV.map((n) => (
           <button
@@ -40,11 +40,14 @@ export function App() {
             onClick={() => setPage(n.page)}
             className={
               page === n.page
-                ? "rounded px-3 py-1.5 text-sm text-accent"
-                : "rounded px-3 py-1.5 text-sm text-paper-dim transition hover:text-paper"
+                ? "relative rounded px-3 py-1.5 text-sm text-paper"
+                : "rounded px-3 py-1.5 text-sm text-paper-dim transition-colors hover:text-paper"
             }
           >
             {n.label}
+            {page === n.page && (
+              <span className="absolute inset-x-2 -bottom-[9px] h-px bg-accent" aria-hidden />
+            )}
           </button>
         ))}
       </header>

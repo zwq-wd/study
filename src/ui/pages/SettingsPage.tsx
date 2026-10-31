@@ -136,30 +136,43 @@ export function SettingsPage() {
   };
 
   if (cfg === null) {
-    return <div className="p-8 text-paper-dim">{t.common.loading}</div>;
+    return <div className="flex h-full items-center justify-center text-paper-dim">{t.common.loading}</div>;
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-6 overflow-auto px-8 py-8">
+    <div className="mx-auto flex h-full max-w-2xl flex-col gap-6 overflow-auto px-8 py-8">
       <div className="flex items-baseline justify-between">
-        <div className="text-lg text-paper">{t.settingsPage.title}</div>
-        {saved && <span className="text-xs text-accent">{t.settingsPage.saved}</span>}
+        <div className="text-base font-medium text-paper">{t.settingsPage.title}</div>
+        {saved && (
+          <span className="text-xs text-accent transition-opacity">{t.settingsPage.saved}</span>
+        )}
       </div>
 
-      <div className="divide-y divide-ink-line rounded-lg border border-ink-line">
+      <div className="@container divide-y divide-ink-line/60 overflow-hidden rounded-lg border border-line-strong">
         {SETTING_META.map((m) => {
           const value = cfg[m.key];
           return (
-            <div key={m.key} className="grid grid-cols-[9rem_7rem_1fr] items-start gap-4 px-4 py-3">
+            <div key={m.key} className="grid grid-cols-1 gap-x-4 gap-y-1.5 px-4 py-3.5 @[560px]:grid-cols-[8rem_6rem_1fr] @[560px]:items-start @[560px]:gap-y-0">
               <div className="text-sm text-paper">{m.label}</div>
               <div className="text-sm tabular-nums text-accent">
                 {m.kind === "boolean" ? (
                   <button
                     type="button"
+                    role="switch"
+                    aria-checked={value as boolean}
+                    aria-label={m.label}
                     onClick={() => void patch(m.key, !(value as boolean))}
-                    className="rounded border border-ink-line px-2 py-0.5 text-xs text-paper hover:border-accent"
+                    className={`relative h-5 w-9 rounded-full border transition-colors ${
+                      (value as boolean)
+                        ? "border-accent bg-accent/25"
+                        : "border-ink-line bg-well"
+                    }`}
                   >
-                    {(value as boolean) ? "开" : "关"}
+                    <span
+                      className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all ${
+                        (value as boolean) ? "left-[18px] bg-accent" : "left-0.5 bg-paper-faint"
+                      }`}
+                    />
                   </button>
                 ) : (
                   <input
@@ -170,14 +183,14 @@ export function SettingsPage() {
                       const n = Number(e.target.value);
                       if (Number.isFinite(n)) void patch(m.key, n);
                     }}
-                    className="w-20 rounded border border-ink-line bg-ink-soft px-2 py-0.5 text-sm text-paper outline-none focus:border-accent"
+                    className="input w-20 px-2 py-1"
                   />
                 )}
                 {m.unit !== "" && <span className="ml-1 text-xs text-paper-dim">{m.unit}</span>}
               </div>
               <div className="text-xs leading-5 text-paper-dim">
                 {m.describe}
-                <span className="ml-2 opacity-50">（{m.range}）</span>
+                <span className="ml-2 text-paper-faint">（{m.range}）</span>
               </div>
             </div>
           );
@@ -202,7 +215,7 @@ export function SettingsPage() {
               window.setTimeout(() => setSaved(false), 1200);
             })();
           }}
-          className="rounded-md border border-ink-line px-4 py-2 text-sm text-paper-dim hover:border-accent hover:text-accent"
+          className="btn-ghost"
         >
           {t.settingsPage.reset}
         </button>
@@ -218,7 +231,7 @@ export function SettingsPage() {
             type="button"
             disabled={busy}
             onClick={() => void exportJson()}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink hover:bg-accent-dim disabled:opacity-40"
+            className="btn-primary disabled:opacity-40"
           >
             {t.settingsPage.exportJson}
           </button>
@@ -226,7 +239,7 @@ export function SettingsPage() {
             type="button"
             disabled={busy}
             onClick={() => void exportCsv()}
-            className="rounded-md border border-ink-line px-4 py-2 text-sm text-paper hover:border-accent hover:text-accent disabled:opacity-40"
+            className="btn-ghost disabled:opacity-40"
           >
             {t.settingsPage.exportCsv}
           </button>
@@ -234,7 +247,7 @@ export function SettingsPage() {
             type="button"
             disabled={busy}
             onClick={() => void importJson()}
-            className="rounded-md border border-ink-line px-4 py-2 text-sm text-paper hover:border-accent hover:text-accent disabled:opacity-40"
+            className="btn-ghost disabled:opacity-40"
           >
             {t.settingsPage.importJson}
           </button>
@@ -242,9 +255,9 @@ export function SettingsPage() {
         {message !== null && (
           <div className="mt-2 break-all text-xs text-accent">{message}</div>
         )}
-        {error !== null && <div className="mt-2 text-xs text-red-400">{error}</div>}
+        {error !== null && <div className="mt-2 text-xs text-danger">{error}</div>}
 
-        <div className="mt-6 text-xs leading-5 text-paper-dim/70">
+        <div className="mt-6 text-xs leading-5 text-paper-faint">
           <div className="text-paper-dim">{t.settingsPage.dataLocation}</div>
           <div className="mt-1 font-mono">%APPDATA%\com.wordpacer.app\wordpacer.db</div>
           <div className="mt-3">

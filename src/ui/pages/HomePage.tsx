@@ -76,14 +76,17 @@ export function HomePage() {
   const showBackup = backupDays === null || backupDays > 7;
 
   return (
-    <div className="mx-auto flex h-full max-w-2xl flex-col justify-center gap-10 px-10 py-12">
+    <div className="mx-auto flex h-full max-w-xl flex-col justify-center gap-8 px-10 py-12">
       <div className="space-y-6">
         {/* 今日到期 —— 唯一醒目的元素 */}
-        <div className="flex items-end justify-between border-b border-ink-line pb-6">
+        <div className="flex items-end justify-between border-b border-ink-line/70 pb-7">
           <div>
-            <div className="text-sm tracking-wide text-paper-dim">{t.home.dueLabel}</div>
+            <div className="text-xs tracking-[0.18em] text-paper-dim">{t.home.dueLabel}</div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-6xl font-light tabular-nums text-accent">
+              <span
+                className="text-7xl font-extralight tabular-nums leading-none text-accent"
+                style={{ textShadow: "0 0 32px rgba(217, 180, 95, 0.18)" }}
+              >
                 {stats.dueToday}
               </span>
               <span className="text-lg text-paper-dim">{t.home.unit}</span>
@@ -94,7 +97,7 @@ export function HomePage() {
               type="button"
               onClick={() => startReview(false)}
               disabled={stats.dueToday === 0}
-              className="rounded-md bg-accent px-6 py-3 text-base font-medium text-ink transition hover:bg-accent-dim disabled:cursor-default disabled:bg-ink-line disabled:text-paper-dim"
+              className="btn-primary px-6 py-3 text-base"
             >
               {t.home.startReview}
             </button>
@@ -102,7 +105,7 @@ export function HomePage() {
               <button
                 type="button"
                 onClick={() => startReview(true)}
-                className="text-sm text-paper-dim underline-offset-4 hover:text-accent hover:underline"
+                className="btn-link"
               >
                 {t.home.reviewAll}
               </button>
@@ -110,43 +113,45 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* 顺延中 */}
-        {stats.deferred > 0 && (
+        <div className="space-y-3 border-l border-ink-line/50 pl-4">
+          {/* 顺延中 */}
+          {stats.deferred > 0 && (
+            <div className="flex items-baseline justify-between text-sm">
+              <span className="text-paper-dim">{t.home.deferredLabel}</span>
+              <span className="tabular-nums text-paper">
+                {stats.deferred} {t.home.unit}
+              </span>
+            </div>
+          )}
+
+          {/* 词库 */}
           <div className="flex items-baseline justify-between text-sm">
-            <span className="text-paper-dim">{t.home.deferredLabel}</span>
+            <span className="text-paper-dim">{t.home.libraryLabel}</span>
             <span className="tabular-nums text-paper">
-              {stats.deferred} {t.home.unit}
+              {stats.total.toLocaleString()} {t.home.wordUnit} · {t.home.learningCount}{" "}
+              {stats.learning.toLocaleString()} · {t.home.graduatedCount}{" "}
+              {stats.graduated.toLocaleString()}
             </span>
           </div>
-        )}
 
-        {/* 词库 */}
-        <div className="flex items-baseline justify-between text-sm">
-          <span className="text-paper-dim">{t.home.libraryLabel}</span>
-          <span className="tabular-nums text-paper">
-            {stats.total.toLocaleString()} {t.home.wordUnit} · {t.home.learningCount}{" "}
-            {stats.learning.toLocaleString()} · {t.home.graduatedCount}{" "}
-            {stats.graduated.toLocaleString()}
-          </span>
-        </div>
-
-        {/* 下次到期最早 */}
-        <div className="flex items-baseline justify-between text-sm">
-          <span className="text-paper-dim">{t.home.nextDueLabel}</span>
-          <span className="tabular-nums text-paper">
-            {stats.nextDueInDays === null ? "—" : dueText}
-          </span>
+          {/* 下次到期最早 */}
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-paper-dim">{t.home.nextDueLabel}</span>
+            <span className="tabular-nums text-paper">
+              {stats.nextDueInDays === null ? "—" : dueText}
+            </span>
+          </div>
         </div>
       </div>
 
       {/* 空队列：只给一句话 + 一个入口，不加任何催促文案 */}
       {stats.dueToday === 0 && (
-        <div className="rounded-lg border border-ink-line px-6 py-8 text-center">
+        <div className="panel px-6 py-8 text-center">
           <div className="text-paper-dim">{t.home.emptyQueue}</div>
           <button
             type="button"
             onClick={() => setPage("import")}
-            className="mt-5 rounded-md border border-ink-line px-5 py-2 text-sm text-paper transition hover:border-accent hover:text-accent"
+            className="btn-ghost mt-5"
           >
             {t.home.importWords}
           </button>
@@ -157,7 +162,7 @@ export function HomePage() {
         <button
           type="button"
           onClick={() => setPage("settings")}
-          className="self-start text-xs text-paper-dim underline-offset-4 hover:text-accent hover:underline"
+          className="btn-link self-start text-xs"
         >
           {backupDays === null ? t.home.neverBackedUp : t.home.backupReminder(backupDays)}
         </button>
@@ -167,14 +172,14 @@ export function HomePage() {
         <button
           type="button"
           onClick={() => setPage("import")}
-          className="rounded-md border border-ink-line px-4 py-2 text-paper transition hover:border-accent hover:text-accent"
+          className="btn-ghost text-paper"
         >
           {t.nav.import}
         </button>
         <button
           type="button"
           onClick={() => setPage("search")}
-          className="rounded-md border border-ink-line px-4 py-2 text-paper transition hover:border-accent hover:text-accent"
+          className="btn-ghost text-paper"
         >
           {t.nav.search}
         </button>
@@ -183,7 +188,7 @@ export function HomePage() {
           onClick={() => {
             bumpStats();
           }}
-          className="ml-auto text-paper-dim underline-offset-4 hover:text-accent hover:underline"
+          className="btn-link ml-auto"
         >
           刷新
         </button>

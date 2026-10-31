@@ -58,8 +58,8 @@ export function ImportPage() {
   const s = plan?.summary;
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-5 px-8 py-8">
-      <div className="text-sm text-paper-dim">{t.importPage.title}</div>
+    <div className="mx-auto flex h-full max-w-2xl flex-col gap-4 px-8 py-8">
+      <div className="text-xs tracking-wide text-paper-dim">{t.importPage.title}</div>
 
       <textarea
         value={raw}
@@ -70,7 +70,7 @@ export function ImportPage() {
         }}
         placeholder={t.importPage.placeholder}
         spellCheck={false}
-        className="min-h-64 flex-1 resize-none rounded-lg border border-ink-line bg-ink-soft p-4 font-mono text-sm leading-7 text-paper outline-none placeholder:text-paper-dim/50 focus:border-accent"
+        className="input min-h-64 flex-1 resize-none rounded-lg p-4 font-mono leading-7"
       />
 
       <div className="flex items-center gap-3">
@@ -78,7 +78,7 @@ export function ImportPage() {
           type="button"
           onClick={() => void onPreview()}
           disabled={busy || raw.trim() === ""}
-          className="rounded-md border border-ink-line px-5 py-2 text-sm text-paper transition hover:border-accent hover:text-accent disabled:cursor-default disabled:opacity-40"
+          className="btn-ghost"
         >
           {t.importPage.preview}
         </button>
@@ -86,17 +86,17 @@ export function ImportPage() {
           type="button"
           onClick={() => void onCommit()}
           disabled={busy || plan === null}
-          className="rounded-md bg-accent px-5 py-2 text-sm font-medium text-ink transition hover:bg-accent-dim disabled:cursor-default disabled:bg-ink-line disabled:text-paper-dim"
+          className="btn-primary"
         >
           {t.importPage.commit}
         </button>
         {message !== null && <span className="text-sm text-accent">{message}</span>}
-        {error !== null && <span className="text-sm text-red-400">{error}</span>}
+        {error !== null && <span className="text-sm text-danger">{error}</span>}
       </div>
 
       {/* 预览摘要 */}
       {plan !== null && s !== undefined && (
-        <div className="rounded-lg border border-ink-line p-4 text-sm">
+        <div className="panel p-4 text-sm">
           <div className="text-paper">{t.importPage.previewTitle}</div>
           <div className="mt-2 text-paper-dim">{t.importPage.summary(s)}</div>
           {s.noMeaning > 0 && (
@@ -106,7 +106,7 @@ export function ImportPage() {
           {/* 错误行 */}
           {plan.parseErrors.length > 0 && (
             <div className="mt-3">
-              <div className="text-xs text-red-400">{t.importPage.errorRows}</div>
+              <div className="text-xs text-danger">{t.importPage.errorRows}</div>
               <ul className="mt-1 space-y-0.5">
                 {plan.parseErrors.slice(0, 20).map((e) => (
                   <li key={e.lineNo} className="text-xs text-paper-dim">
@@ -123,7 +123,7 @@ export function ImportPage() {
               .filter((d) => d.similarTo !== undefined)
               .slice(0, 20)
               .map((d) => (
-                <li key={`${d.lineNo}-${d.norm}`} className="text-xs text-amber-300/80">
+                <li key={`${d.lineNo}-${d.norm}`} className="text-xs text-warn">
                   第 {d.lineNo} 行 {t.importPage.similarHint(d.similarTo ?? "")}
                 </li>
               ))}
@@ -137,9 +137,9 @@ export function ImportPage() {
             <ul className="mt-2 max-h-64 space-y-0.5 overflow-auto">
               {plan.decisions.slice(0, 200).map((d) => (
                 <li key={`${d.lineNo}-${d.norm}`} className="text-xs text-paper-dim">
-                  <span className="inline-block w-8 tabular-nums text-paper-dim/60">{d.lineNo}</span>
+                  <span className="inline-block w-8 tabular-nums text-paper-faint">{d.lineNo}</span>
                   <span className="text-paper">{d.headword}</span>
-                  <span className="ml-2 text-paper-dim/70">
+                  <span className="ml-2 text-paper-faint">
                     {d.action === "new"
                       ? "新增"
                       : d.action === "append"
@@ -151,7 +151,7 @@ export function ImportPage() {
                   {d.meanings.length > 0 && (
                     <span className="ml-2">{d.meanings.join("；")}</span>
                   )}
-                  {d.note !== undefined && <span className="ml-2 opacity-60">（{d.note}）</span>}
+                  {d.note !== undefined && <span className="ml-2 text-paper-faint">（{d.note}）</span>}
                 </li>
               ))}
             </ul>
