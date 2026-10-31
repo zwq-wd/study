@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口能力：SQL、文件对话框、文件读写",
+  "description": "主窗口能力：SQL、文件对话框、文件读写、AI 校对出网",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -12,6 +12,14 @@
     "dialog:allow-save",
     "dialog:allow-open",
     "fs:allow-write-text-file",
-    "fs:allow-read-text-file"
+    "fs:allow-read-text-file",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.deepseek.com/*" },
+        { "url": "http://localhost:*/*" },
+        { "url": "http://127.0.0.1:*/*" }
+      ]
+    }
   ]
 }

@@ -8,7 +8,11 @@ rust-version = "1.77.2"
 
 [lib]
 name = "wordpacer_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# 桌面端只需要 rlib（main.rs 静态链接它）。
+# staticlib / cdylib 是为 iOS/Android 准备的：cdylib 会把所有符号以序号导出，
+# 在 GNU 工具链 + 大量依赖（tauri/rustls）时爆「export ordinal too large: 131534」。
+# 本项目只出 Windows 桌面安装包，去掉这两个即可恢复正常构建。
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -18,6 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-http = "2.7.0"
 
 [profile.release]
 panic = "abort"

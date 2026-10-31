@@ -18,6 +18,8 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // AI 校对需要绕开 WebView 同源策略，由 Rust 侧转发（§4.7 / §12.3）
+        .plugin(tauri_plugin_http::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
