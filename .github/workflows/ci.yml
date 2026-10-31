@@ -25,6 +25,11 @@ jobs:
           node-version: '20.18.1'
           cache: npm
 
+      # 集成测试跑在真实 SQLite 上，由一个 Python 子进程持有连接
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: 安装依赖
         run: npm ci
 

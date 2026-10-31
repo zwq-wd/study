@@ -5,15 +5,63 @@
  * 常驻是必须的 —— BEGIN/COMMIT 要落在同一条连接上，否则事务语义既假不了也真不了。
  * 这样被测的是**真的 SQL**：多值 INSERT、事务、日期键、排序、LIKE 转义都被覆盖。
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 
-const PY =
-  process.env.WORDPACER_PY ??
-  "D:/DSH-Data/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/python/python.exe";
+/**
+ * 找一个真正能跑的 Python。
+ *
+ * Windows 的 App Execution Alias 会在这里埋坑：PATH 里确实有 python.exe，
+ * 但那是 0 字节的 Store 占位符，执行直接返回 9009。所以候选必须逐个
+ * 用 --version 实跑验证，能跑通再试用 —— 只看文件存在会选错。
+ */
+const PY_CANDIDATES = [
+  process.env.WORDPACER_PY,
+  // DSH 自带的运行时（本机开发用）
+  "D:/DSH-Data/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/python/python.exe",
+  // PATH 与常见安装位置（CI 与普通环境）
+  "python",
+  "python3",
+  "py",
+  "/usr/bin/python3",
+  "/usr/local/bin/python3",
+].filter((p): p is string => typeof p === "string" && p !== "");
+
+let resolvedPy: string | null = null;
+
+function probePython(cmd: string): boolean {
+  try {
+    const r = spawnSync(cmd, ["-c", "import sqlite3"], {
+      stdio: "ignore",
+      timeout: 15_000,
+      windowsHide: true,
+    });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function resolvePython(): string {
+  if (resolvedPy !== null) return resolvedPy;
+  for (const cmd of PY_CANDIDATES) {
+    if (cmd.includes("/") || cmd.includes("\\")) {
+      if (!fs.existsSync(cmd)) continue;
+    }
+    if (probePython(cmd)) {
+      resolvedPy = cmd;
+      return cmd;
+    }
+  }
+  throw new Error(
+    "找不到可用的 Python 3（需要带 sqlite3 模块）。\n" +
+      "候选都试过了：" + PY_CANDIDATES.join(", ") + "\n" +
+      "如果 PY 装在不常见的位置，用环境变量 WORDPACER_PY 指定绝对路径。",
+  );
+}
 
 export interface SqlResponse {
   rows: unknown[];
@@ -75,9 +123,10 @@ export async function createAsyncRunner(): Promise<AsyncRunner> {
   const scriptPath = path.join(dir, "run.py");
   fs.writeFileSync(scriptPath, RUNNER_SCRIPT, "utf8");
 
-  const child = spawn(PY, [scriptPath, dbPath], {
+  const child = spawn(resolvePython(), [scriptPath, dbPath], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
+    windowsHide: true,
   });
 
   const rl = createInterface({ input: child.stdout });
@@ -102,7 +151,7 @@ export async function createAsyncRunner(): Promise<AsyncRunner> {
         return;
       }
       pending.push(resolve);
-      const timer = setTimeout(() => reject(new Error(`sqlite 子进程超时。stderr: ${stderrText}`)), 60_000);
+      const timer = setTimeout(() => reject(new Error(`sqlite 子进程超时。stderr: ${stderrText}`)), 120_000);
       timer.unref?.();
     });
 
