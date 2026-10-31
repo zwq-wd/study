@@ -1,7 +1,7 @@
 {
   "name": "wordpacer",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "本地单词复习节奏管理器 —— 录入今天背的词，按遗忘曲线告诉你下次该看哪些",
   "pnpm": {

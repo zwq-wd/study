@@ -3,6 +3,53 @@
 本项目的所有重要变更都记录在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-10-29
+
+视觉层重做。**纯样式改动**：`src/domain/`、`src/data/`、`src-tauri/` 零改动，
+158 项测试仍然全绿。设计说明见 [`docs/UI-美化方案.md`](docs/UI-美化方案.md)。
+
+### 变更
+
+- **配色**：从平涂深色改为「台灯下的单词卡」。桌面是一盏灯（`radial-gradient`，
+  光源 40% 22%，亮度比 1.51:1），卡面是一张纸（`#241f18`，与灯心 1.32:1，
+  hairline 边分离，不用阴影）。用光做层次，不用字号做层次。
+- **英文改用衬线体**：`--font-serif`（Sitka Text → Georgia → Cambria）。
+  原先 52px 英文使用 `font-light` + 中文字体栈的拉丁备用字形，笔画无对比、发虚。
+  中文释义一律保持黑体，不碰衬线。
+- **释义浮现**：`fade-in` 120ms 改为 `ink-in` 160ms（opacity + 4px 位移，
+  不是翻转）。`prefers-reduced-motion` 下关闭位移。
+- **设计 token 收敛**：新增 `paper-faint`、`card`、`well`、`row-hover`、
+  `line-strong`、`accent-hover`、`warn`、`danger`、`good`；
+  `paper` / `paper-dim` / `ink-line` / `accent` 保留原名只换色值，
+  全站 186 处引用无需改动。
+
+### 修复
+
+- **对比度**：6 处文字低于 WCAG AA —— 占位符 `text-paper-dim/50`（2.64:1）、
+  `opacity-50`（≈2.9:1）、`opacity-60`（3.22:1）、5 处 `text-paper-dim/70`（3.93:1）。
+  全部改用 `text-paper-faint`，实测 4.60–6.08:1。
+- **焦点可见性**：全项目 `focus-visible` 出现 0 次，而复习页完全依赖键盘。
+  补全局 `:focus-visible` 焦点环。
+- **主按钮 hover 方向**：原 `hover:bg-accent-dim` 是变暗，会让金色按钮上的
+  深色字对比度掉到 4.34:1。改为变亮（`#e6c675`，7.48:1）。
+- **主题外颜色**：`text-red-400` / `text-amber-300` 两个 Tailwind 默认色
+  收进 `danger` / `warn`；3 处 `text-[10px]` 收进 `.tag`。
+
+### 重构
+
+- `src/styles.css` 新增 `@layer components`：`.btn-primary` / `.btn-ghost` /
+  `.btn-link` / `.input` / `.panel` / `.tag`。17 处长 btn className、
+  4 处输入框、5 处容器改用组件类。
+- 设置页「开 / 关」文字按钮换成 switch（`role="switch"` + `aria-checked`）。
+- 导航激活态改用底部金线，不再只靠颜色区分。
+- 三处容器查询（`@container`）修复 520px 最小宽度下的挤压：
+  查询页结果行、设置页三列网格、复习页卡面内距。
+- `SearchPage` 硬编码的「复习次数 / 遗忘次数」移入 `i18n.ts`。
+
+### 工程
+
+- 新增 `.github/workflows/ci.yml`：类型检查、测试、前端构建、Rust 编译检查。
+
 ## [0.1.0] - 2026-10-28
 
 首个可用版本。M0–M4 全部完成：能录、能复习、能撑住、能带走。
@@ -56,4 +103,5 @@
   当前交付的是免安装绿色版，拷整个文件夹即可运行。
 - AI 旁路（补义项 / 例句 / 辨析）未实现，`ai_enabled` 设置项留位。
 
-[0.1.0]: https://example.com/wordpacer/releases/tag/v0.1.0
+[0.2.0]: https://github.com/zwq-wd/study/releases/tag/v0.2.0
+[0.1.0]: https://github.com/zwq-wd/study/releases/tag/v0.1.0
