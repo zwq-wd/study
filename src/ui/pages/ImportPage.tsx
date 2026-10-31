@@ -5,9 +5,11 @@
  */
 import { useState } from "react";
 import type { ImportPlan } from "../../data/types.ts";
-import { getRepo } from "../repoClient.ts";
+import { getAiClient, getRepo } from "../repoClient.ts";
 import { useApp } from "../store.ts";
 import { t } from "../i18n.ts";
+import { indexFindings, selectLinesForCheck, type FindingIndex } from "../../domain/ai/apply.ts";
+import type { CheckFinding } from "../../domain/ai/types.ts";
 
 export function ImportPage() {
   const [raw, setRaw] = useState("");
@@ -16,7 +18,45 @@ export function ImportPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // AI 校对：结果按行号索引；note 用来显示「没发现问题」或失败原因
+  const [checking, setChecking] = useState(false);
+  const [findings, setFindings] = useState<FindingIndex>(new Map<number, CheckFinding>());
+  const [checkNote, setCheckNote] = useState<string | null>(null);
+
   const bumpStats = useApp((s) => s.bumpStats);
+
+  const runCheck = async (p: ImportPlan) => {
+    // 先清掉上一次的结果，避免旧结果挂在新预览上
+    setFindings(new Map<number, CheckFinding>());
+    setCheckNote(null);
+
+    const lines = selectLinesForCheck(p.decisions);
+    if (lines.length === 0) return;
+
+    const ai = await getAiClient();
+    const gate = await ai.gate();
+    // 没开 / 没配 Key 时什么都不显示 —— 没打算用的人不该看到 AI 的存在
+    if (!gate.ready) return;
+
+    setChecking(true);
+    try {
+      const r = await ai.check(lines);
+      if (r.ok) {
+        setFindings(indexFindings(r.findings));
+        if (r.partialError !== undefined) {
+          // 有批没跑成：绝不能说「没发现问题」，那是谎报安全
+          setCheckNote(t.importPage.aiPartial(r.partialError));
+        } else if (r.findings.length === 0) {
+          setCheckNote(t.importPage.aiClean);
+        }
+      } else {
+        // 失败静默降级：说一句就够，绝不阻塞导入（§4.7）
+        setCheckNote(t.importPage.aiFailed(r.reason));
+      }
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const onPreview = async () => {
     setBusy(true);
@@ -26,6 +66,7 @@ export function ImportPage() {
       const repo = await getRepo();
       const p = await repo.planImport(raw, new Date());
       setPlan(p);
+      await runCheck(p);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -129,31 +170,70 @@ export function ImportPage() {
               ))}
           </ul>
 
+          {/* AI 校对结果（只提示，不自动改任何一行） */}
+          {checking && <div className="mt-3 text-xs text-paper-dim">{t.importPage.aiChecking}</div>}
+          {!checking && checkNote !== null && (
+            <div className="mt-3 text-xs text-paper-dim">{checkNote}</div>
+          )}
+          {!checking && findings.size > 0 && (
+            <div className="mt-3">
+              <div className="text-xs text-warn">{t.importPage.aiTitle}</div>
+              <ul className="mt-1 space-y-0.5">
+                {[...findings.values()].slice(0, 20).map((f) => (
+                  <li key={f.lineNo} className="text-xs leading-5 text-paper-dim">
+                    <span className="tabular-nums text-paper-faint">第 {f.lineNo} 行</span>{" "}
+                    <span className="text-paper">{f.headword}</span>{" "}
+                    <span className={f.kind === "nonexistent" ? "text-danger" : "text-warn"}>
+                      {t.importPage.aiKind[f.kind]}
+                    </span>
+                    {f.suggestion !== undefined && (
+                      <span className="ml-1">
+                        — {t.importPage.aiSuggestion}{" "}
+                        <span className="text-accent">{f.suggestion}</span>
+                      </span>
+                    )}
+                    <span className="ml-1 text-paper-faint">（{f.reason}）</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-1 text-xs text-paper-faint">{t.importPage.aiHint}</div>
+            </div>
+          )}
+
           {/* 逐行清单（折叠到最近 200 条） */}
           <details className="mt-3">
             <summary className="cursor-pointer text-xs text-paper-dim">
               逐行明细（{plan.decisions.length}）
             </summary>
             <ul className="mt-2 max-h-64 space-y-0.5 overflow-auto">
-              {plan.decisions.slice(0, 200).map((d) => (
-                <li key={`${d.lineNo}-${d.norm}`} className="text-xs text-paper-dim">
-                  <span className="inline-block w-8 tabular-nums text-paper-faint">{d.lineNo}</span>
-                  <span className="text-paper">{d.headword}</span>
-                  <span className="ml-2 text-paper-faint">
-                    {d.action === "new"
-                      ? "新增"
-                      : d.action === "append"
-                        ? "追加义项"
-                        : d.action === "duplicate"
-                          ? "重复"
-                          : "错误"}
-                  </span>
-                  {d.meanings.length > 0 && (
-                    <span className="ml-2">{d.meanings.join("；")}</span>
-                  )}
-                  {d.note !== undefined && <span className="ml-2 text-paper-faint">（{d.note}）</span>}
-                </li>
-              ))}
+              {plan.decisions.slice(0, 200).map((d) => {
+                const f = findings.get(d.lineNo);
+                return (
+                  <li key={`${d.lineNo}-${d.norm}`} className="text-xs text-paper-dim">
+                    <span className="inline-block w-8 tabular-nums text-paper-faint">{d.lineNo}</span>
+                    <span className="text-paper">{d.headword}</span>
+                    <span className="ml-2 text-paper-faint">
+                      {d.action === "new"
+                        ? "新增"
+                        : d.action === "append"
+                          ? "追加义项"
+                          : d.action === "duplicate"
+                            ? "重复"
+                            : "错误"}
+                    </span>
+                    {d.meanings.length > 0 && (
+                      <span className="ml-2">{d.meanings.join("；")}</span>
+                    )}
+                    {d.note !== undefined && <span className="ml-2 text-paper-faint">（{d.note}）</span>}
+                    {f !== undefined && (
+                      <span className={f.kind === "nonexistent" ? "ml-2 text-danger" : "ml-2 text-warn"}>
+                        {t.importPage.aiKind[f.kind]}
+                        {f.suggestion !== undefined ? ` → ${f.suggestion}` : ""}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </details>
         </div>

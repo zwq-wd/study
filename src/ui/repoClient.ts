@@ -5,8 +5,10 @@
  */
 import { SqliteRepo } from "../data/sqlite/repo.ts";
 import type { Repo } from "../data/repo.ts";
+import { TauriAiClient } from "../data/ai/client.ts";
 
 let repoPromise: Promise<Repo> | null = null;
+let aiPromise: Promise<TauriAiClient> | null = null;
 
 export function getRepo(): Promise<Repo> {
   if (!repoPromise) {
@@ -24,6 +26,20 @@ export async function loadConfig() {
   const repo = await getRepo();
   const r = repo as SqliteRepo;
   return r.config();
+}
+
+/**
+ * AI 校对客户端。设置存储复用同一个 Repo ——
+ * Key 和排程参数存在同一张 settings 表里，导出时一起被剔除。
+ */
+export function getAiClient(): Promise<TauriAiClient> {
+  if (!aiPromise) {
+    aiPromise = (async () => {
+      const repo = await getRepo();
+      return new TauriAiClient(repo);
+    })();
+  }
+  return aiPromise;
 }
 
 export type { Repo };

@@ -16,6 +16,7 @@ import { getRepo, loadConfig } from "../repoClient.ts";
 import { openTextFile, saveTextFile, todayKey } from "../files.ts";
 import { useApp } from "../store.ts";
 import { t } from "../i18n.ts";
+import { AiSettingsSection } from "./AiSettingsSection.tsx";
 
 export function SettingsPage() {
   const [cfg, setCfg] = useState<SchedulerConfig | null>(null);
@@ -264,6 +265,8 @@ export function SettingsPage() {
             卸载不会删数据。备份：每周点一次「导出 JSON」，存到网盘或另一块盘。
           </div>
         </div>
+
+        <AiSettingsSection />
       </div>
     </div>
   );
