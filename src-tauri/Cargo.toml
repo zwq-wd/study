@@ -1,6 +1,6 @@
 [package]
 name = "wordpacer"
-version = "0.2.0"
+version = "0.3.0"
 description = "本地单词复习节奏管理器"
 authors = ["wordpacer"]
 edition = "2021"

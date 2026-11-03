@@ -157,5 +157,6 @@
   当前交付的是免安装绿色版，拷整个文件夹即可运行。
 - AI 旁路（补义项 / 例句 / 辨析）未实现，`ai_enabled` 设置项留位。
 
+[0.3.0]: https://github.com/zwq-wd/study/releases/tag/v0.3.0
 [0.2.0]: https://github.com/zwq-wd/study/releases/tag/v0.2.0
 [0.1.0]: https://github.com/zwq-wd/study/releases/tag/v0.1.0
