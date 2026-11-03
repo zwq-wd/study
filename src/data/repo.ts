@@ -43,6 +43,11 @@ export interface Repo {
   countDue(today: string): Promise<number>;
   /** 单卡结算：写 words + review_logs，一个事务 */
   settleWord(wordId: number, rating: Rating, now: Date, sessionId: string | null): Promise<SettleResult>;
+  /**
+   * 「今天背错了」的词。给「重新复习」用，**只读**，不结算、不写日志。
+   * 时间区间按 day_boundary_hour 划，不是 00:00。
+   */
+  listMissedToday(today: string): Promise<WordRow[]>;
 
   // ---------- 录入 ----------
   /** 解析 + 比对已有词条，产出预览；不写库 */

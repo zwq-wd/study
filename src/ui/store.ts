@@ -7,7 +7,7 @@ import { create } from "zustand";
 import type { SchedulerConfig } from "../domain/scheduler/config.ts";
 import { DEFAULT_CONFIG } from "../domain/scheduler/config.ts";
 
-export type Page = "home" | "review" | "import" | "search" | "settings";
+export type Page = "home" | "review" | "rereview" | "import" | "search" | "settings";
 
 interface AppState {
   page: Page;

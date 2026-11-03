@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSession,
+  shuffle,
   sortCandidates,
 } from "../src/domain/scheduler/session.ts";
 import type { WordRow } from "../src/data/types.ts";
@@ -29,6 +30,17 @@ function row(partial: Partial<WordRow> & { id: number }): WordRow {
   };
 }
 
+/** 固定随机源：永远返回 0，Fisher–Yates 会退化成一次确定的旋转，便于断言。 */
+const zeroRng = (): number => 0;
+
+/** 依次吐出给定序列，用完后返回 0。 */
+function seqRng(values: number[]): () => number {
+  let i = 0;
+  return () => values[i++] ?? 0;
+}
+
+const ids = (rows: readonly WordRow[]): number[] => rows.map((r) => r.id);
+
 describe("buildSession", () => {
   const candidates = Array.from({ length: 10 }, (_, i) => row({ id: i + 1 }));
 
@@ -50,7 +62,7 @@ describe("buildSession", () => {
 
   it("limit 小于候选数：顺延 = 差额", () => {
     const r = buildSession(candidates, 4);
-    expect(r.picked.map((w) => w.id)).toEqual([1, 2, 3, 4]);
+    expect(r.picked).toHaveLength(4);
     expect(r.deferred).toBe(6);
   });
 
@@ -69,6 +81,59 @@ describe("buildSession", () => {
   it("负数与非法 limit 得当 0", () => {
     expect(buildSession(candidates, -5).picked).toHaveLength(0);
     expect(buildSession(candidates, Number.NaN).picked).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------- 乱序（§5.7）
+
+  it("选词仍按逾期顺序取前 N，洗的只是出场顺序", () => {
+    // rng 恒为 0 时，Fisher–Yates 是确定的：结果可预测但仍是同一批词
+    const r = buildSession(candidates, 4, false, zeroRng);
+    expect(r.deferred).toBe(6);
+    // 一定是前 4 条里的词 —— 顺延集合没被随机破坏
+    expect([...ids(r.picked)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("乱序：出场顺序不再等于逾期顺序", () => {
+    const r = buildSession(candidates, 10, false, zeroRng);
+    expect(ids(r.picked)).not.toEqual(ids(candidates));
+  });
+
+  it("乱序：不增不减，是同一个多重集", () => {
+    const r = buildSession(candidates, 10, false, zeroRng);
+    expect([...ids(r.picked)].sort((a, b) => a - b)).toEqual(ids(candidates));
+  });
+
+  it("洗牌不重复、不丢词（更大样本）", () => {
+    const many = Array.from({ length: 150 }, (_, i) => row({ id: i + 1 }));
+    const r = buildSession(many, 150, false, Math.random);
+    const got = ids(r.picked);
+    expect(got).toHaveLength(150);
+    expect(new Set(got).size).toBe(150);
+  });
+});
+
+describe("shuffle", () => {
+  it("空数组 / 单元素不变", () => {
+    expect(shuffle([], zeroRng)).toEqual([]);
+    expect(shuffle([7], zeroRng)).toEqual([7]);
+  });
+
+  it("不改入参", () => {
+    const input = [1, 2, 3, 4];
+    shuffle(input, zeroRng);
+    expect(input).toEqual([1, 2, 3, 4]);
+  });
+
+  it("是同一多重集", () => {
+    const input = [1, 2, 3, 4, 5];
+    expect([...shuffle(input, zeroRng)].sort((a, b) => a - b)).toEqual(input);
+  });
+
+  it("rng 决定结果：不同随机源给出不同排列", () => {
+    const input = [1, 2, 3, 4, 5];
+    const a = shuffle(input, zeroRng);
+    const b = shuffle(input, seqRng([0.9, 0.9, 0.9, 0.9, 0.9]));
+    expect(a).not.toEqual(b);
   });
 });
 

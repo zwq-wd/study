@@ -25,6 +25,21 @@ export function daysBetween(a: string, b: string): number {
   return Math.round(ms / 86_400_000);
 }
 
+/**
+ * 一个日键对应的时间区间 [start, end)，epoch 毫秒，左闭右开。
+ *
+ * 和 dayKey 互为逆运算：dayKey(某时刻) === 日键 ⟺ 该时刻落在 dayRange(日键) 里。
+ * 边界小时参与计算 —— 今天的区间是「今天 04:00 到明天 04:00」，不是 00:00 到 24:00。
+ * 用在「查今天这一场复习里被标背错了的词」这种按日聚类的查询上。
+ */
+export function dayRange(key: string, boundaryHour = 4): { start: number; end: number } {
+  const d = dayKeyToDate(key);
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), boundaryHour, 0, 0, 0);
+  const end = new Date(start.getTime());
+  end.setDate(end.getDate() + 1);
+  return { start: start.getTime(), end: end.getTime() };
+}
+
 /** 日键加天数。 */
 export function addDays(key: string, days: number): string {
   const d = dayKeyToDate(key);

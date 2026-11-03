@@ -206,10 +206,16 @@ describe("normalizeConfig", () => {
 
   it("字符串数字也能收（从数据库/导入 JSON 来的）", () => {
     expect(normalizeConfig({ sessionLimit: "120" }).sessionLimit).toBe(120);
-    expect(normalizeConfig({ enableAgainButton: "true" }).enableAgainButton).toBe(true);
   });
 
   it("非法值回落默认", () => {
     expect(normalizeConfig({ sessionLimit: "abc" }).sessionLimit).toBe(DEFAULT_CONFIG.sessionLimit);
+  });
+
+  it("不认识的旧键（如已退役的 enableAgainButton）被忽略，不污染配置", () => {
+    const stale: Record<string, unknown> = { enableAgainButton: "true" };
+    const cfg = normalizeConfig(stale as Partial<Record<keyof SchedulerConfig, unknown>>);
+    expect(cfg).toEqual(DEFAULT_CONFIG);
+    expect("enableAgainButton" in cfg).toBe(false);
   });
 });

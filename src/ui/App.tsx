@@ -5,6 +5,7 @@ import { useApp, type Page } from "./store.ts";
 import { t } from "./i18n.ts";
 import { HomePage } from "./pages/HomePage.tsx";
 import { ReviewPage } from "./pages/ReviewPage.tsx";
+import { RereviewPage } from "./pages/RereviewPage.tsx";
 import { ImportPage } from "./pages/ImportPage.tsx";
 import { SearchPage } from "./pages/SearchPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
@@ -25,6 +26,15 @@ export function App() {
     return (
       <div className="h-full">
         <ReviewPage />
+      </div>
+    );
+  }
+
+  // 重新复习同样全屏：它和复习用的是同一种「一屏一张」的形态
+  if (page === "rereview") {
+    return (
+      <div className="h-full">
+        <RereviewPage />
       </div>
     );
   }

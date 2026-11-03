@@ -8,16 +8,27 @@
  * │                                  │
  * │      （点任意处 / 空格 显示中文）  │
  * │                                  │
- * │  [ 不会 ]              [ 下一张 ] │
+ * │                        [ 我记到了 ]│
+ * └──────────────────────────────────┘
+ *          ↓ 点了「我记到了」，中文淡入
+ * ┌──────────────────────────────────┐
+ * │           abandon                │
+ * │             放弃                  │
+ * │  [ 背错了 ]            [ 背对了 ] │
  * └──────────────────────────────────┘
  *
- * 只显示英文；点一下出中文；默认动作 = 记住（看完即算完成，不点按钮也会推进）。
+ * 两步，不是一步：先自己回忆 → 点「我记到了」看答案 → 再判断对不对。
+ * 老版本是「点下一张 = 默认我会」，问题是没看到答案就已经默认记对了，
+ * 背错了也无从发现。现在评分只在看到中文之后才发生。
+ *
+ * 只显示英文；点一下出中文；出场顺序已打乱（§5.7），不再按逾期顺序一张张来。
  * 不显示进度条动画、不显示连击、不显示「你已连续 3 天」。只有一个 i / N。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Rating } from "ts-fsrs";
 import type { SenseRow, WordRow } from "../../data/types.ts";
 import { buildSession, type SessionPick } from "../../domain/scheduler/session.ts";
+import { decideRequeue, insertRequeue } from "../../domain/scheduler/requeue.ts";
 import { visibleSenses, isSupplement } from "../../domain/senses.ts";
 import { daysBetween } from "../../domain/time.ts";
 import { getRepo, loadConfig } from "../repoClient.ts";
@@ -31,7 +42,14 @@ interface SessionState {
   revealed: boolean;
   againCount: number;
   senses: Map<number, SenseRow[]>;
+  /** 本轮队列。背错了的词会被插回这个数组，所以它会变长。 */
   words: WordRow[];
+  /** 已结算过的词 id。点「上一张」回头再看时不再重复结算，避免 reps 被刷。 */
+  settled: Set<number>;
+  /** 每个词本轮被重排过几次，用于封顶（§requeue.MAX_REQUEUE_PER_CARD）。 */
+  requeueCount: Map<number, number>;
+  /** 上一张已经用尽重排次数时的一句说明，前进即清除 */
+  notice: string | null;
 }
 
 export function ReviewPage() {
@@ -40,7 +58,6 @@ export function ReviewPage() {
   const fontSizeIndex = useApp((s) => s.fontSizeIndex);
   const cycleFontSize = useApp((s) => s.cycleFontSize);
   const bumpStats = useApp((s) => s.bumpStats);
-  const config = useApp((s) => s.config);
 
   const [session, setSession] = useState<SessionState | null>(null);
   const [finished, setFinished] = useState(false);
@@ -49,6 +66,8 @@ export function ReviewPage() {
   const [nextDueDesc, setNextDueDesc] = useState<string>("");
 
   const sessionIdRef = useRef<string | null>(null);
+  /** 防连点：两个按钮都在手上，双击会把同一张卡结算两次。 */
+  const advanceLockRef = useRef(false);
 
   // 建会话
   useEffect(() => {
@@ -90,6 +109,9 @@ export function ReviewPage() {
           againCount: 0,
           senses: sensesMap,
           words: pick.picked,
+          settled: new Set<number>(),
+          requeueCount: new Map<number, number>(),
+          notice: null,
         });
         setFinished(pick.picked.length === 0);
       } catch (e) {
@@ -137,29 +159,72 @@ export function ReviewPage() {
     [bumpStats],
   );
 
+  /**
+   * 结算当前卡并前进。
+   *
+   * 两条规则同时成立：
+   *
+   * 1. **同一张卡本轮只结算第一次**（settled 集合）。点「上一张」回头再看、
+   *    或者背错后被重排回来再答一次，都不会再写一次 FSRS —— 否则每答错一次
+   *    `lapses` 就 +1，撞上 `graduationOnLapses = 6` 就被强制毕业，
+   *    最需要练的词反而最先消失（见 domain/scheduler/requeue.ts）。
+   *
+   * 2. **背错了就插回本轮队列**，直到你背对。插的位置离当前位置至少
+   *    MIN_REQUEUE_GAP 张，避免同一批词连着出现。
+   *
+   * 「本次 N 张」数的是真正结算过的卡（settled.size），不是队列里出现过的次数。
+   */
   const advance = useCallback(
     async (rating: Rating) => {
       if (!session || !current) return;
-      const repo = await getRepo();
-      const again = session.againCount + (rating === Rating.Again ? 1 : 0);
-      const shown = session.index + 1;
+      if (advanceLockRef.current) return;
+      advanceLockRef.current = true;
 
+      let next: SessionState = session;
       try {
-        await repo.settleWord(current.id, rating, new Date(), sessionIdRef.current);
-        // 每张卡都推进会话的 shown / again —— 中途关掉软件也不会丢进度（§4.3.5）
-        if (sessionIdRef.current) {
-          await repo.updateSession(sessionIdRef.current, { shown, again });
+        if (!session.settled.has(current.id)) {
+          const repo = await getRepo();
+          await repo.settleWord(current.id, rating, new Date(), sessionIdRef.current);
+
+          const settled = new Set(session.settled);
+          settled.add(current.id);
+          const again = session.againCount + (rating === Rating.Again ? 1 : 0);
+
+          // 每张卡都推进会话的 shown / again —— 中途关掉软件也不会丢进度（§4.3.5）
+          if (sessionIdRef.current) {
+            await repo.updateSession(sessionIdRef.current, { shown: settled.size, again });
+          }
+          next = { ...session, settled, againCount: again };
+        }
+
+        // 本轮重排：只在「未结算过」的那一次判断，因为 requeueCount 也只在那时增长。
+        // 已经结算过的卡（回头重看）不重排，避免同一张卡无限循环。
+        if (!session.settled.has(current.id)) {
+          const soFar = session.requeueCount.get(current.id) ?? 0;
+          const decision = decideRequeue(rating, soFar);
+          if (decision.requeue) {
+            const requeued = insertRequeue(next.words, next.index, current);
+            const counts = new Map(next.requeueCount);
+            counts.set(current.id, soFar + 1);
+            next = { ...next, words: requeued, requeueCount: counts, notice: null };
+          } else if (decision.reason === "exhausted") {
+            // 次数用尽：这一张本轮不再回来。说一句「明天还会排到」，
+            // 否则「怎么不出现了」和「怎么又出现了」一样让人困惑。
+            next = { ...next, notice: t.review.requeueExhausted };
+          }
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        advanceLockRef.current = false;
         return;
       }
 
-      if (session.index + 1 >= session.words.length) {
-        await finish(again, shown);
+      if (next.index + 1 >= next.words.length) {
+        await finish(next.againCount, next.settled.size);
         return;
       }
-      setSession({ ...session, index: session.index + 1, revealed: false, againCount: again });
+      setSession({ ...next, index: next.index + 1, revealed: false });
+      advanceLockRef.current = false;
     },
     [session, current, finish],
   );
@@ -169,29 +234,30 @@ export function ReviewPage() {
     setSession({ ...session, index: session.index - 1, revealed: false });
   }, [session]);
 
+  /** 第一步 → 第二步：把中文亮出来。不结算。 */
   const reveal = useCallback(() => {
     if (!session) return;
     if (!session.revealed) setSession({ ...session, revealed: true });
   }, [session]);
 
-  const onNext = useCallback(() => {
-    if (!session) return;
-    // 默认动作 = 记住。还没看答案就按下一张，也按 Good 结算（看完即算完成）。
+  const onRemembered = useCallback(() => {
     void advance(Rating.Good);
-  }, [session, advance]);
+  }, [advance]);
 
-  const onAgain = useCallback(() => {
+  const onForgot = useCallback(() => {
     void advance(Rating.Again);
   }, [advance]);
 
-  // 键盘：Space 显示/下一张，← 上一张，A 标记不会（若开启）
+  // 键盘：Space 先显示中文、再看完之后推进；← 上一张；A 背错了
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (finished) return;
-      if (e.code === "Space") {
+      const revealed = session?.revealed ?? false;
+
+      if (e.code === "Space" || e.code === "ArrowRight") {
         e.preventDefault();
-        if (session && !session.revealed) reveal();
-        else onNext();
+        if (!revealed) reveal();
+        else onRemembered();
         return;
       }
       if (e.code === "ArrowLeft") {
@@ -199,18 +265,14 @@ export function ReviewPage() {
         goPrev();
         return;
       }
-      if (e.code === "ArrowRight") {
-        e.preventDefault();
-        onNext();
-        return;
-      }
       if (e.key === "a" || e.key === "A") {
-        if (config.enableAgainButton) onAgain();
+        // 没看到答案之前不能判错 —— 这正是老版本「默认我不会」的问题
+        if (revealed) onForgot();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [finished, session, reveal, onNext, goPrev, onAgain, config.enableAgainButton]);
+  }, [finished, session, reveal, onRemembered, goPrev, onForgot]);
 
   if (error !== null) {
     return (
@@ -227,13 +289,20 @@ export function ReviewPage() {
   }
 
   if (finished) {
-    const shown = session.words.length;
+    // 「本次 N 张」= 真正结算过的卡，不是队列长度 ——
+    // 背错重排会让 words 变长，用 words.length 会把重看的次数也算成新词。
+    const shown = session.settled.size;
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <div className="text-lg text-paper">{t.review.doneTitle}</div>
         <div className="text-sm text-paper-dim">
           {t.review.doneLine(shown, session.againCount)}
         </div>
+        {session.requeueCount.size > 0 && (
+          <div className="text-xs text-paper-faint">
+            {t.review.doneRequeued(session.requeueCount.size)}
+          </div>
+        )}
         {nextDueDesc !== "" && (
           <div className="text-sm text-paper-dim">{t.review.nextDueLine(nextDueDesc)}</div>
         )}
@@ -270,6 +339,7 @@ export function ReviewPage() {
       <div className="relative z-10 flex items-baseline justify-between text-sm text-paper-dim">
         <span className="tabular-nums">{progress}</span>
         <div className="flex items-center gap-4">
+          {session.notice !== null && <span className="text-paper-faint">{session.notice}</span>}
           {maxOverdue > 0 && <span>{t.review.maxOverdue(maxOverdue)}</span>}
           <button
             type="button"
@@ -294,6 +364,13 @@ export function ReviewPage() {
         >
           <div className={`word ${sizeClass} text-paper`}>{current.headword}</div>
 
+          {/* 这张是背错后被重排回来的：说清楚，免得「怎么又出现了」变成困惑 */}
+          {session.requeueCount.has(current.id) && (
+            <span className="-mt-4 text-xs tracking-wide text-paper-faint">
+              {t.review.requeueTag}
+            </span>
+          )}
+
           {session.revealed ? (
             <div className="ink-in space-y-2.5">
               {shownSenses.length === 0 ? (
@@ -313,34 +390,46 @@ export function ReviewPage() {
         </div>
       </div>
 
-      {/* 拇指可达区：主操作固定在屏幕下方 */}
+      {/* 拇指可达区：第一步一个按钮，第二步两个 */}
       <div className="flex items-center justify-between">
-        <div>
-          {config.enableAgainButton ? (
+        {session.revealed ? (
+          <>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onAgain();
+                onForgot();
               }}
               className="btn-ghost px-6 py-3"
             >
-              {t.review.again}
+              {t.review.forgot}
             </button>
-          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemembered();
+              }}
+              className="btn-primary px-8 py-3 text-base"
+            >
+              {t.review.remembered}
+            </button>
+          </>
+        ) : (
+          <>
             <span />
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onNext();
-          }}
-          className="btn-primary px-8 py-3 text-base"
-        >
-          {t.review.next}
-        </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                reveal();
+              }}
+              className="btn-primary px-8 py-3 text-base"
+            >
+              {t.review.showAnswer}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

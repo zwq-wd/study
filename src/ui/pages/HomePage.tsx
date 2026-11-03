@@ -18,6 +18,7 @@ import { t } from "../i18n.ts";
 export function HomePage() {
   const [stats, setStats] = useState<HomeStats | null>(null);
   const [backupDays, setBackupDays] = useState<number | null>(null);
+  const [missedCount, setMissedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const statsVersion = useApp((s) => s.statsVersion);
@@ -38,8 +39,10 @@ export function HomePage() {
         const repo = await getRepo();
         const today = todayKey(cfg.dayBoundaryHour);
         const s = await repo.stats(today);
+        const missed = await repo.listMissedToday(today);
         if (!alive) return;
         setStats(s);
+        setMissedCount(missed.length);
         setBackupDays(await repo.daysSinceBackup(new Date()));
         setError(null);
       } catch (e) {
@@ -166,6 +169,23 @@ export function HomePage() {
         >
           {backupDays === null ? t.home.neverBackedUp : t.home.backupReminder(backupDays)}
         </button>
+      )}
+
+      {/* 今天背错了的词：只在这一块出现，队列为空时也在 —— 那正是最想再看一眼的时候 */}
+      {missedCount > 0 && (
+        <div className="panel flex items-center justify-between px-6 py-5">
+          <div>
+            <div className="text-sm text-paper">{t.rereview.title}</div>
+            <div className="mt-1 text-xs text-paper-faint">{t.rereview.homeHint}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPage("rereview")}
+            className="btn-ghost shrink-0"
+          >
+            {t.rereview.entry(missedCount)}
+          </button>
+        </div>
       )}
 
       <div className="flex gap-3 text-sm">

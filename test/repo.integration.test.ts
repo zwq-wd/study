@@ -43,8 +43,9 @@ describe("设置初始化", () => {
     expect(s["graduate_interval"]).toBe("90");
     expect(s["min_reps_to_graduate"]).toBe("4");
     expect(s["graduation_on_lapses"]).toBe("6");
-    expect(s["enable_again_button"]).toBe("false");
     expect(s["day_boundary_hour"]).toBe("4");
+    // 「显示不会按钮」开关已退役（§4.3.2 改成两步流程），新库不再写这个键
+    expect(s["enable_again_button"]).toBeUndefined();
   });
 
   it("config() 还原成 SchedulerConfig", async () => {
@@ -296,7 +297,35 @@ describe("维护操作", () => {
     const after = await repo.getWordByNorm("abandon");
     expect(after?.status).toBe("learning");
     expect(after?.fsrs_lapses).toBe(0);
-    expect(after?.fsrs_reps).toBe(1);
+    expect(after?.fsrs_reps).toBe(0);
+  });
+
+  /**
+   * 「立即排入下次会话」不能只是按钮上的一句承诺。
+   * listDue 只取 fsrs_due_day <= 今天，所以 due 必须就是今天 —— 用 newWordCard
+   * （due = now + 4 天）会让重新激活的词 4 天后才出现。
+   */
+  it("resetWord 之后当天就能被 listDue 排到", async () => {
+    const p = await repo.planImport("abandon 放弃", new Date());
+    await repo.commitImport(p, at("2026-10-01T10:00:00+08:00"));
+    const w = await repo.getWordByNorm("abandon");
+
+    await repo.resetWord(w!.id, at("2026-10-27T10:00:00+08:00"));
+
+    const due = await repo.listDue("2026-10-27");
+    expect(due.map((r) => r.norm)).toContain("abandon");
+  });
+
+  it("resetWord 清掉毕业状态，已毕业的词能回到队列", async () => {
+    const p = await repo.planImport("abandon 放弃", new Date());
+    await repo.commitImport(p, at("2026-10-01T10:00:00+08:00"));
+    const w = await repo.getWordByNorm("abandon");
+    await repo.updateWord(w!.id, { status: "graduated" });
+    expect(await repo.listDue("2026-10-27")).toEqual([]);
+
+    await repo.resetWord(w!.id, at("2026-10-27T10:00:00+08:00"));
+
+    expect((await repo.listDue("2026-10-27")).map((r) => r.norm)).toEqual(["abandon"]);
   });
 
   it("备份时间记录与天数计算", async () => {
@@ -310,6 +339,93 @@ describe("维护操作", () => {
     await repo.commitImport(p, new Date());
     const w = await repo.getWordByNorm("abandon");
     await repo.updateWord(w!.id, { note: "词根 ban = 禁止" });
-    expect((await repo.getWordByNorm("abandon"))?.note).toBe("词根 ban = 禁止");
+    expect((await repo.getWordByNorm("abandon"))!.note).toBe("词根 ban = 禁止");
+  });
+});
+
+/**
+ * 重新复习的取词：今天标过 Again 的词。
+ *
+ * 这里用真实 SQLite 跑，因为要验证的是**日键 + 边界小时的区间换算**
+ * 在 SQL 里真的成立（epoch ms 比较），而不是一个能过的纯函数。
+ */
+describe("listMissedToday（重新复习取词）", () => {
+  const day1 = "2026-11-01";
+  const day2 = "2026-11-02";
+
+  async function seed(): Promise<void> {
+    const p = await repo.planImport("abandon 放弃\nabstract 抽象的\naccommodate 容纳", new Date());
+    await repo.commitImport(p, at("2026-10-28T10:00:00+08:00"));
+  }
+
+  it("没有断错时返回空", async () => {
+    await seed();
+    expect(await repo.listMissedToday(day1)).toEqual([]);
+  });
+
+  it("只有标了 Again 的词进来，Good 的不进来", async () => {
+    await seed();
+    const a = await repo.getWordByNorm("abandon");
+    const b = await repo.getWordByNorm("abstract");
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T10:00:00+08:00"), null);
+    await repo.settleWord(b!.id, Rating.Good, at("2026-11-01T10:00:00+08:00"), null);
+
+    const missed = await repo.listMissedToday(day1);
+    expect(missed.map((w) => w.norm)).toEqual(["abandon"]);
+  });
+
+  it("只认当天：昨天的 Again 不出现在今天", async () => {
+    await seed();
+    const a = await repo.getWordByNorm("abandon");
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T10:00:00+08:00"), null);
+
+    expect(await repo.listMissedToday(day2)).toEqual([]);
+  });
+
+  it("同一天 Again 多次只出现一次（EXISTS 不是 JOIN 笛卡尔积）", async () => {
+    await seed();
+    const a = await repo.getWordByNorm("abandon");
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T10:00:00+08:00"), null);
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T11:00:00+08:00"), null);
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T12:00:00+08:00"), null);
+
+    const missed = await repo.listMissedToday(day1);
+    expect(missed).toHaveLength(1);
+    expect(missed[0]?.norm).toBe("abandon");
+  });
+
+  it("边界小时生效：凌晨 2 点算前一天，不算今天", async () => {
+    await seed();
+    const a = await repo.getWordByNorm("abandon");
+    // 11-02 凌晨 2 点，按 day_boundary_hour=4 属于 11-01
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-02T02:00:00+08:00"), null);
+
+    expect((await repo.listMissedToday(day1)).map((w) => w.norm)).toEqual(["abandon"]);
+    expect(await repo.listMissedToday(day2)).toEqual([]);
+  });
+
+  it("边界之后：04:00 整算新的一天", async () => {
+    await seed();
+    const a = await repo.getWordByNorm("abandon");
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-02T04:00:00+08:00"), null);
+
+    expect(await repo.listMissedToday(day1)).toEqual([]);
+    expect((await repo.listMissedToday(day2)).map((w) => w.norm)).toEqual(["abandon"]);
+  });
+
+  it("只读：查完不改变任何 FSRS 字段", async () => {
+    await seed();
+    const a = await repo.getWordByNorm("abandon");
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T10:00:00+08:00"), null);
+    const before = await repo.getWordByNorm("abandon");
+
+    await repo.listMissedToday(day1);
+    await repo.listMissedToday(day1);
+
+    const after = await repo.getWordByNorm("abandon");
+    expect(after?.fsrs_lapses).toBe(before?.fsrs_lapses);
+    expect(after?.fsrs_reps).toBe(before?.fsrs_reps);
+    expect(after?.fsrs_due_day).toBe(before?.fsrs_due_day);
+    expect(after?.fsrs_stability).toBe(before?.fsrs_stability);
   });
 });

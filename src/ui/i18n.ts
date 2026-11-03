@@ -32,14 +32,47 @@ export const t = {
     progress: (i: number, n: number) => `${i} / ${n}`,
     maxOverdue: (days: number) => `逾期最久 ${days} 天`,
     revealHint: "点任意处 / 空格 显示中文",
-    again: "不会",
-    next: "下一张",
-    prev: "上一张",
+    /** 第一步：回忆完了，把答案翻出来 */
+    showAnswer: "我记到了",
+    /** 第二步：看到中文之后的两个判断 */
+    remembered: "背对了",
+    forgot: "背错了",
     doneTitle: "本次结束",
-    doneLine: (n: number, again: number) => `本次 ${n} 张 · 标记不会 ${again} 张`,
+    doneLine: (n: number, again: number) => `本次 ${n} 张 · 背错 ${again} 张`,
+    /** 有重排时补一行，把「多看了几遍」说清楚 */
+    doneRequeued: (n: number) => `其中 ${n} 张重看过（同一张本轮只结算一次）`,
     nextDueLine: (desc: string) => `下次到期 ${desc}`,
     backHome: "回首页",
     supplement: "补充",
+    /** 这张卡本轮是重排回来的 —— 让「怎么又出现了」有解释 */
+    requeueTag: "再过一遍",
+    /** 同一个词本轮重排次数用尽 */
+    requeueExhausted: "这张先放着，明天还会再排到",
+  },
+  /**
+   * 重新复习（v0.4）。文案刻意不出现「错」「不及格」「再考一次」——
+   * 它是「再看一遍」，不是补考。和首页一样：只给位置信息，不给情绪。
+   */
+  rereview: {
+    title: "重新复习",
+    progress: (i: number, n: number) => `${i} / ${n}`,
+    /** 首页入口：今天背错了 N 个词 */
+    entry: (n: number) => `重新复习（今天背错 ${n} 张）`,
+    homeHint: "今天标过「背错了」的词。重看一遍，不改下次到期。",
+    revealHint: "点任意处 / 空格 显示中文",
+    showAnswer: "我记到了",
+    next: "下一张",
+    last: "看完了",
+    doneTitle: "这轮看完了",
+    doneLine: (n: number) => `本次重看 ${n} 张`,
+    /** 必须写出来：重看不改排程，否则用户会以为「重看=复习过了」 */
+    doneHint: "重看不会改动下次到期日。",
+    emptyToday: "今天没有背错的词。",
+    backHome: "回首页",
+    restart: "再看一遍",
+    /** 中途关掉软件后恢复 */
+    resume: (i: number, n: number) => `已看过 ${i} / ${n}，从第 ${i + 1} 张继续`,
+    deferNote: (n: number) => `另有 ${n} 张顺延到下一轮`,
   },
   importPage: {
     title: "粘贴今天的词（每行一个）",

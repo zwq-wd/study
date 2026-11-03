@@ -3,6 +3,60 @@
 本项目的所有重要变更都记录在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-11-03
+
+本轮把复习从「过一遍」改成「练到会」：背错了的词在本轮里再来一遍，直到背对。
+另加一个全场结束后的「重新复习」入口。
+
+### 新增
+
+- **本轮重排**（`domain/scheduler/requeue.ts` + `ReviewPage`）：第二步点「背错了」后，
+  该词被插回本轮队列，插在当前进度之后至少 5 张的随机位置，直到再次背对为止。
+  同一张卡本轮最多重排 3 次（连同首次共 4 遍），封顶时顶部提示「这张先放着，明天还会再排到」。
+  重排回来的卡在卡面上标「再过一遍」。
+- **重新复习页**（`src/ui/pages/RereviewPage.tsx`）。首页新增入口
+  `重新复习（今天背错 N 张）`，候选为 0 时整块不出现。
+  卡片形态与复习页一致，但**只有一个按钮**：点「我记到了」翻中文，再点「下一张」。
+  不判断对错 —— 判对错是复习页的职责。
+- `domain/scheduler/rereview.ts`：`buildRereview` 纯函数，取前 N 条后洗牌。
+- `domain/time.ts`：`dayRange(key, boundaryHour)` 把日键换成 `[start, end)` 时间区间，
+  与 `dayKey` 互为逆运算。用于按「今天」聚类复习日志。
+- `Repo.listMissedToday(today)`：取今天日志里 `rating = Again` 的词。
+  **只读**，不结算、不写日志。
+
+### 关键设计：同一张卡本轮只结算第一次
+
+复习页每结算一次 `Again`，`lapses` 就 +1，而 `graduationOnLapses = 6` 会强制毕业。
+若重排回来的每次作答都结算，一个词在这一次坐里错 6 次就会被永久移出队列 ——
+**最需要练的词反而最先消失**。实测（S₀ = 2.31 的词在第 4 天）：
+
+| 结算策略 | 本轮错 4 次后 lapses | stability |
+|---|---|---|
+| 每次作答都结算 | 4 | 2.31 → 0.02（再错 2 次强制毕业） |
+| **只结算第一次**（采用） | 1 | 0.66（明天 due +1，正常恢复） |
+
+第一次的反应才是真实的第一印象；后面的重复是练习，不是新的遗忘证据。
+`domain/scheduler/requeue.ts` 的模块注释与 `test/requeue.test.ts` 的轨迹用例守着这条不变式。
+
+「本次 N 张」相应改为 `settled.size`（真正结算过的卡），不再用队列长度 ——
+重排会让队列变长，用长度会把练习次数算成新词。
+
+### 修复
+
+- **`decideRequeue` 对 NaN 的处理写反了**。`NaN >= 6` 是 `false`，原写法会让脏数据
+  变成「永远重排」而不是「永不重排」。改为先归一化再比较，由 `test/requeue.test.ts` 盯住。
+- **`resetWord` 的「立即排入」名不副实**。查询页「重新激活」原先用 `newWordCard` 实现，
+  due = now + 4 天；而 `listDue` 只取 `fsrs_due_day <= 今天`，所以点完要等 4 天才会出现。
+  改用 `createEmptyCard`（due = now、state = New、reps = lapses = 0），当天即可排入。
+  同时 `reps` 从 1 改为 0 —— 重新激活等于从没背过。
+
+### 测试
+
+266 项全绿（新增 `test/requeue.test.ts` 16 项、`test/rereview.test.ts` 13 项、
+`listMissedToday` 集成测试 8 项）。集成测试跑在真实 SQLite 上，覆盖边界小时
+（凌晨 2 点算前一天、04:00 整算新的一天）、跨月、同日多次 Again 只取一次、
+以及「查询不改变任何 FSRS 字段」。
+
 ## [0.2.0] - 2026-10-29
 
 视觉层重做。**纯样式改动**：`src/domain/`、`src/data/`、`src-tauri/` 零改动，

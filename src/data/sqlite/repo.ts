@@ -10,7 +10,7 @@
  * 批量录入必须用单条多值 INSERT，不要循环 50 次 IPC（§7.5）。
  */
 import type Database from "@tauri-apps/plugin-sql";
-import { Rating } from "ts-fsrs";
+import { Rating, createEmptyCard } from "ts-fsrs";
 import { getDb, checkpoint } from "./db.ts";
 import { withTransaction } from "./tx.ts";
 import type {
@@ -30,7 +30,7 @@ import { DEFAULT_CONFIG, normalizeConfig, type SchedulerConfig } from "../../dom
 import { settle } from "../../domain/scheduler/review.ts";
 import { newWordCard } from "../../domain/scheduler/newWord.ts";
 import { toCard, fromCard } from "../../domain/scheduler/card.ts";
-import { dayKey } from "../../domain/time.ts";
+import { dayKey, dayRange } from "../../domain/time.ts";
 import { buildBundle } from "../../domain/export.ts";
 import { computeStats } from "../../domain/stats.ts";
 
@@ -42,7 +42,6 @@ export const SETTING_KEYS = {
   graduateInterval: "graduate_interval",
   minRepsToGraduate: "min_reps_to_graduate",
   graduationOnLapses: "graduation_on_lapses",
-  enableAgainButton: "enable_again_button",
   dayBoundaryHour: "day_boundary_hour",
 } as const;
 
@@ -56,7 +55,6 @@ function toConfigRows(cfg: SchedulerConfig): Array<[string, string]> {
     [SETTING_KEYS.graduateInterval, String(cfg.graduateInterval)],
     [SETTING_KEYS.minRepsToGraduate, String(cfg.minRepsToGraduate)],
     [SETTING_KEYS.graduationOnLapses, String(cfg.graduationOnLapses)],
-    [SETTING_KEYS.enableAgainButton, cfg.enableAgainButton ? "true" : "false"],
     [SETTING_KEYS.dayBoundaryHour, String(cfg.dayBoundaryHour)],
   ];
 }
@@ -69,7 +67,6 @@ function rowsToConfig(rows: Record<string, string>): SchedulerConfig {
     graduateInterval: rows[SETTING_KEYS.graduateInterval],
     minRepsToGraduate: rows[SETTING_KEYS.minRepsToGraduate],
     graduationOnLapses: rows[SETTING_KEYS.graduationOnLapses],
-    enableAgainButton: rows[SETTING_KEYS.enableAgainButton],
     dayBoundaryHour: rows[SETTING_KEYS.dayBoundaryHour],
   });
 }
@@ -80,6 +77,16 @@ function chunks<T>(items: readonly T[], size = 90): T[][] {
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
 }
+
+/** 「今天背错了」的判定：今天这一场的日志里出现过 Again。 */
+const MISSED_SQL = `
+  SELECT w.* FROM words w
+    WHERE EXISTS (
+      SELECT 1 FROM review_logs l
+        WHERE l.word_id = w.id AND l.rating = 1
+          AND l.reviewed_at >= ? AND l.reviewed_at < ?
+    )
+    ORDER BY w.fsrs_due_day ASC, w.fsrs_stability ASC, w.id ASC`;
 
 export class SqliteRepo implements Repo {
   private db: Database | null = null;
@@ -180,6 +187,13 @@ export class SqliteRepo implements Repo {
       [today],
     );
     return rows[0]?.n ?? 0;
+  }
+
+  async listMissedToday(today: string): Promise<WordRow[]> {
+    const db = await this.d();
+    const cfg = await this.config();
+    const { start, end } = dayRange(today, cfg.dayBoundaryHour);
+    return db.select<WordRow[]>(MISSED_SQL, [start, end]);
   }
 
   async settleWord(
@@ -547,10 +561,21 @@ export class SqliteRepo implements Repo {
     );
   }
 
+  /**
+   * 重新激活（§5.6）：重置为 `State.New` + **立即**排入下一次会话。
+   *
+   * 这里必须用 `createEmptyCard` 而不是 `newWordCard`：
+   * - `newWordCard` 是「今天刚录入、已经背过一次」的语义，它把 due 排到 4 天后
+   * - 而 `listDue` 只取 `fsrs_due_day <= 今天`，所以用 newWordCard 实现的
+   *   「立即排入」实际上是 4 天后才出现，跟按钮上的承诺相反
+   *
+   * 用空卡则是 due = now、state = New、reps = lapses = 0，
+   * 今天这一场复习就能把它排进来 —— 这才是「重新激活」该有的效果。
+   */
   async resetWord(wordId: number, now: Date): Promise<void> {
     const db = await this.d();
     const cfg = await this.config();
-    const fresh = newWordCard(now, cfg);
+    const fresh = createEmptyCard(now);
     const f = fromCard(fresh);
     const dueDay = dayKey(fresh.due, cfg.dayBoundaryHour);
 

@@ -156,37 +156,16 @@ export function SettingsPage() {
             <div key={m.key} className="grid grid-cols-1 gap-x-4 gap-y-1.5 px-4 py-3.5 @[560px]:grid-cols-[8rem_6rem_1fr] @[560px]:items-start @[560px]:gap-y-0">
               <div className="text-sm text-paper">{m.label}</div>
               <div className="text-sm tabular-nums text-accent">
-                {m.kind === "boolean" ? (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={value as boolean}
-                    aria-label={m.label}
-                    onClick={() => void patch(m.key, !(value as boolean))}
-                    className={`relative h-5 w-9 rounded-full border transition-colors ${
-                      (value as boolean)
-                        ? "border-accent bg-accent/25"
-                        : "border-ink-line bg-well"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all ${
-                        (value as boolean) ? "left-[18px] bg-accent" : "left-0.5 bg-paper-faint"
-                      }`}
-                    />
-                  </button>
-                ) : (
-                  <input
-                    type="number"
-                    step={m.key === "requestRetention" ? 0.01 : 1}
-                    value={String(value)}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      if (Number.isFinite(n)) void patch(m.key, n);
-                    }}
-                    className="input w-20 px-2 py-1"
-                  />
-                )}
+                <input
+                  type="number"
+                  step={m.key === "requestRetention" ? 0.01 : 1}
+                  value={String(value)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n)) void patch(m.key, n);
+                  }}
+                  className="input w-20 px-2 py-1"
+                />
                 {m.unit !== "" && <span className="ml-1 text-xs text-paper-dim">{m.unit}</span>}
               </div>
               <div className="text-xs leading-5 text-paper-dim">
@@ -280,7 +259,6 @@ function settingKeyOf(key: keyof SchedulerConfig): string {
     graduateInterval: "graduate_interval",
     minRepsToGraduate: "min_reps_to_graduate",
     graduationOnLapses: "graduation_on_lapses",
-    enableAgainButton: "enable_again_button",
     dayBoundaryHour: "day_boundary_hour",
   };
   return map[key];

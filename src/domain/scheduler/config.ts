@@ -19,8 +19,6 @@ export interface SchedulerConfig {
   minRepsToGraduate: number;
   /** 遗忘次数达到此值强制毕业，3–20 */
   graduationOnLapses: number;
-  /** 是否显示「不会」按钮 */
-  enableAgainButton: boolean;
   /** 一天的边界小时，0–6 */
   dayBoundaryHour: number;
 }
@@ -33,7 +31,6 @@ export const DEFAULT_CONFIG: SchedulerConfig = {
   graduateInterval: 90,
   minRepsToGraduate: 4,
   graduationOnLapses: 6,
-  enableAgainButton: false,
   dayBoundaryHour: 4,
 };
 
@@ -44,10 +41,7 @@ export interface Range {
   float?: boolean;
 }
 
-export const CONFIG_RANGES: Record<
-  Exclude<keyof SchedulerConfig, "enableAgainButton">,
-  Range
-> = {
+export const CONFIG_RANGES: Record<keyof SchedulerConfig, Range> = {
   requestRetention: { min: 0.8, max: 0.95, float: true },
   sessionLimit: { min: 60, max: 300 },
   maximumInterval: { min: 20, max: 3650 },
@@ -78,14 +72,6 @@ export function normalizeConfig(partial: Partial<Record<keyof SchedulerConfig, u
     }
   }
 
-  if (typeof partial.enableAgainButton === "boolean") {
-    out.enableAgainButton = partial.enableAgainButton;
-  } else if (partial.enableAgainButton === "true" || partial.enableAgainButton === "1") {
-    out.enableAgainButton = true;
-  } else if (partial.enableAgainButton === "false" || partial.enableAgainButton === "0") {
-    out.enableAgainButton = false;
-  }
-
   return out;
 }
 
@@ -106,6 +92,9 @@ export function buildFsrs(cfg: SchedulerConfig): FSRS {
 /**
  * 设置页每一行要展示的元信息（名称 / 说明 / 范围 / 单位）。
  * 文案集中在这里，UI 只负责渲染。
+ *
+ * 只剩数值项了：「显示不会按钮」随 §4.3.2 改成两步流程一起退役，
+ * 「背错了」现在是复习页的固定按钮，不再是可关的开关。
  */
 export interface SettingMeta {
   key: keyof SchedulerConfig;
@@ -113,7 +102,6 @@ export interface SettingMeta {
   unit: string;
   range: string;
   describe: string;
-  kind: "number" | "boolean";
 }
 
 export const SETTING_META: SettingMeta[] = [
@@ -123,7 +111,6 @@ export const SETTING_META: SettingMeta[] = [
     unit: "",
     range: "0.80 – 0.95",
     describe: "你希望复习时还记得的概率。调低 → 间隔变长、复习变少、忘得变多。",
-    kind: "number",
   },
   {
     key: "sessionLimit",
@@ -131,7 +118,6 @@ export const SETTING_META: SettingMeta[] = [
     unit: "张",
     range: "60 – 300",
     describe: "一次打开最多看多少张。不改变到期计算，只决定这次看多少，超出的顺延。",
-    kind: "number",
   },
   {
     key: "maximumInterval",
@@ -140,7 +126,6 @@ export const SETTING_META: SettingMeta[] = [
     range: "20 – 3650",
     describe:
       "单个词的复习间隔上限。备考期用 50：考试在明年 3 月，排到 200 天后的词等于考前再也见不到。考完试想长期用 → 调到 365。",
-    kind: "number",
   },
   {
     key: "graduateInterval",
@@ -148,7 +133,6 @@ export const SETTING_META: SettingMeta[] = [
     unit: "天",
     range: "30 – 365",
     describe: "间隔到 90 天、并且复习满 4 次，才标「已毕业」。备考期内因为上限只有 50 天，够不到 90。",
-    kind: "number",
   },
   {
     key: "minRepsToGraduate",
@@ -156,23 +140,13 @@ export const SETTING_META: SettingMeta[] = [
     unit: "次",
     range: "2 – 10",
     describe: "防止「一次 Good 就算毕业」。不建议低于 3。",
-    kind: "number",
   },
   {
     key: "graduationOnLapses",
     label: "强制毕业阈值",
     unit: "次",
     range: "3 – 20",
-    describe: "一个词被标「不会」累计这么多次，强制毕业，不再纠缠。",
-    kind: "number",
-  },
-  {
-    key: "enableAgainButton",
-    label: "显示「不会」按钮",
-    unit: "",
-    range: "开 / 关",
-    describe: "开了才有那个按钮。关着也不影响排程，只是算法收不到反馈。",
-    kind: "boolean",
+    describe: "一个词被标「背错了」累计这么多次，强制毕业，不再纠缠。",
   },
   {
     key: "dayBoundaryHour",
@@ -180,6 +154,5 @@ export const SETTING_META: SettingMeta[] = [
     unit: "时",
     range: "0 – 6",
     describe: "凌晨 2 点背的词算「昨天」，避免深夜学习被误判逾期。",
-    kind: "number",
   },
 ];
