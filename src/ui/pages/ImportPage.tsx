@@ -16,6 +16,8 @@ export function ImportPage() {
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** 刚导入完就有「再看一遍」入口 —— 那是唯一一个「现在就想翻一遍」的时刻 */
+  const [canViewToday, setCanViewToday] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // AI 校对：结果按行号索引；note 用来显示「没发现问题」或失败原因
@@ -24,6 +26,7 @@ export function ImportPage() {
   const [checkNote, setCheckNote] = useState<string | null>(null);
 
   const bumpStats = useApp((s) => s.bumpStats);
+  const setPage = useApp((s) => s.setPage);
 
   const runCheck = async (p: ImportPlan) => {
     // 先清掉上一次的结果，避免旧结果挂在新预览上
@@ -86,6 +89,8 @@ export function ImportPage() {
       const repo = await getRepo();
       const r = await repo.commitImport(plan, new Date());
       setMessage(t.importPage.done(r.insertedWords, r.appendedSenses));
+      // 只有真进了新词才给入口：全是重复行或只追加义项时，今天并没有新词可翻
+      setCanViewToday(r.insertedWords > 0);
       setPlan(null);
       setRaw("");
       bumpStats();
@@ -108,6 +113,8 @@ export function ImportPage() {
           setRaw(e.target.value);
           setPlan(null);
           setMessage(null);
+          // 重新输入了，上一次导入的入口就不再对应当前内容
+          setCanViewToday(false);
         }}
         placeholder={t.importPage.placeholder}
         spellCheck={false}
@@ -132,6 +139,11 @@ export function ImportPage() {
           {t.importPage.commit}
         </button>
         {message !== null && <span className="text-sm text-accent">{message}</span>}
+        {canViewToday && (
+          <button type="button" onClick={() => setPage("today")} className="btn-ghost">
+            {t.todayWords.fromImport}
+          </button>
+        )}
         {error !== null && <span className="text-sm text-danger">{error}</span>}
       </div>
 

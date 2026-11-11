@@ -74,6 +74,31 @@ export const t = {
     resume: (i: number, n: number) => `已看过 ${i} / ${n}，从第 ${i + 1} 张继续`,
     deferNote: (n: number) => `另有 ${n} 张顺延到下一轮`,
   },
+  /**
+   * 今日新词。和 rereview 是同一类页面的两种入口：那个看「今天背错的」，
+   * 这个看「今天录入的」。同样只读 —— 所以文案里不出现「复习」「到期」「掌握」。
+   */
+  todayWords: {
+    title: "今日新词",
+    homeHint: "今天录入的词。翻一遍，不改下次到期。",
+    entry: (n: number) => `再看一遍（今天录入 ${n} 张）`,
+    progress: (i: number, n: number) => `${i} / ${n}`,
+    revealHint: "点任意处 / 空格 显示中文",
+    showAnswer: "我记到了",
+    next: "下一张",
+    last: "看完了",
+    doneTitle: "这轮翻完了",
+    doneLine: (n: number) => `今天录入 ${n} 张`,
+    /** 必须写出来：翻看不改排程，否则用户会以为「翻过=复习过了」 */
+    doneHint: "翻看不会改动排程，也不算一次复习。",
+    emptyToday: "今天还没有录入新词。",
+    backHome: "回首页",
+    restart: "再看一遍",
+    goImport: "去录入",
+    deferNote: (n: number) => `另有 ${n} 张留到下一轮`,
+    /** 录入页导入成功后的入口：刚录完正是最想看一遍的时候 */
+    fromImport: "再看一遍今天录入的词",
+  },
   importPage: {
     title: "粘贴今天的词（每行一个）",
     placeholder:

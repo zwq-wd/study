@@ -19,6 +19,7 @@ export function HomePage() {
   const [stats, setStats] = useState<HomeStats | null>(null);
   const [backupDays, setBackupDays] = useState<number | null>(null);
   const [missedCount, setMissedCount] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const statsVersion = useApp((s) => s.statsVersion);
@@ -40,9 +41,12 @@ export function HomePage() {
         const today = todayKey(cfg.dayBoundaryHour);
         const s = await repo.stats(today);
         const missed = await repo.listMissedToday(today);
+        // 今日新词和「重新复习」来自同一天的同一批查库动作，合成一次读
+        const todayNew = await repo.listTodayNewWords(today);
         if (!alive) return;
         setStats(s);
         setMissedCount(missed.length);
+        setTodayCount(todayNew.length);
         setBackupDays(await repo.daysSinceBackup(new Date()));
         setError(null);
       } catch (e) {
@@ -184,6 +188,23 @@ export function HomePage() {
             className="btn-ghost shrink-0"
           >
             {t.rereview.entry(missedCount)}
+          </button>
+        </div>
+      )}
+
+      {/* 今天录入的词：紧跟在「重新复习」下面 —— 两者是同一件事的两个入口 */}
+      {todayCount > 0 && (
+        <div className="panel flex items-center justify-between px-6 py-5">
+          <div>
+            <div className="text-sm text-paper">{t.todayWords.title}</div>
+            <div className="mt-1 text-xs text-paper-faint">{t.todayWords.homeHint}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPage("today")}
+            className="btn-ghost shrink-0"
+          >
+            {t.todayWords.entry(todayCount)}
           </button>
         </div>
       )}

@@ -48,6 +48,15 @@ export interface Repo {
    * 时间区间按 day_boundary_hour 划，不是 00:00。
    */
   listMissedToday(today: string): Promise<WordRow[]>;
+  /**
+   * 「今天新录入的词」。给「今日新词」回看用，**只读**，不结算、不写日志。
+   *
+   * 和 listMissedToday 的区别只在候选来源：那边看 review_logs，
+   * 这边看 words.created_at；两边都按 day_boundary_hour 划天。
+   * 之所以单开一个方法而不是复用 search()，是因为
+   * 「今天录的」是一条时间区间查询，翻页式的搜索结果排不出这个语义。
+   */
+  listTodayNewWords(today: string): Promise<WordRow[]>;
 
   // ---------- 录入 ----------
   /** 解析 + 比对已有词条，产出预览；不写库 */

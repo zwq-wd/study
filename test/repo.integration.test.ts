@@ -429,3 +429,86 @@ describe("listMissedToday（重新复习取词）", () => {
     expect(after?.fsrs_stability).toBe(before?.fsrs_stability);
   });
 });
+
+/**
+ * 「今日新词」的取词：今天录入的词。
+ *
+ * 和 listMissedToday 一样跑真实 SQLite —— 要验证的是 created_at 的 epoch 毫秒
+ * 比较与边界小时的区间换算在 SQL 里真的成立，而不是一个能过的纯函数。
+ */
+describe("今日新词 listTodayNewWords", () => {
+  const day1 = "2026-10-27";
+  const day2 = "2026-10-28";
+
+  function rawDb(): { select: <T>(sql: string) => Promise<T> } {
+    return (repo as unknown as { db: { select: <T>(sql: string) => Promise<T> } }).db;
+  }
+
+  async function countLogs(): Promise<number> {
+    const rows = await rawDb().select<Array<{ n: number }>>("SELECT COUNT(*) AS n FROM review_logs");
+    return rows[0]?.n ?? 0;
+  }
+
+  /** 在指定时刻录入，created_at 就是那个时刻（commitImport 用 now 落 created_at）。 */
+  async function seed(atIso: string, raw: string): Promise<void> {
+    const p = await repo.planImport(raw, new Date(atIso));
+    await repo.commitImport(p, new Date(atIso));
+  }
+
+  it("没有任何词时返回空数组", async () => {
+    expect(await repo.listTodayNewWords(day1)).toEqual([]);
+  });
+
+  it("今天录入的取得到，昨天录入的取不到", async () => {
+    await seed("2026-10-26T10:00:00+08:00", "abstract 抽象的");
+    await seed("2026-10-27T10:00:00+08:00", "abandon 放弃");
+
+    expect((await repo.listTodayNewWords(day1)).map((w) => w.norm)).toEqual(["abandon"]);
+    expect((await repo.listTodayNewWords("2026-10-26")).map((w) => w.norm)).toEqual(["abstract"]);
+  });
+
+  /**
+   * 断言方向是刻意的：02:00 < day_boundary_hour = 4，按 dayRange 落在**前一天**的区间里。
+   * 契约说「按 day_boundary_hour 划界」，就必须和 listMissedToday 的边界用例
+   * 走同一条时间轴 —— 否则两个「今天」会互相打架。
+   */
+  it("边界小时生效：凌晨 2 点录入的词算前一天", async () => {
+    await seed("2026-10-28T02:00:00+08:00", "abandon 放弃");
+
+    expect((await repo.listTodayNewWords(day1)).map((w) => w.norm)).toEqual(["abandon"]);
+    expect(await repo.listTodayNewWords(day2)).toEqual([]);
+  });
+
+  it("边界之后：04:00 整算新的一天", async () => {
+    await seed("2026-10-28T04:00:00+08:00", "abandon 放弃");
+
+    expect(await repo.listTodayNewWords(day1)).toEqual([]);
+    expect((await repo.listTodayNewWords(day2)).map((w) => w.norm)).toEqual(["abandon"]);
+  });
+
+  it("按录入时间正序返回", async () => {
+    await seed("2026-10-27T09:00:00+08:00", "abandon 放弃");
+    await seed("2026-10-27T11:00:00+08:00", "abstract 抽象的");
+
+    expect((await repo.listTodayNewWords(day1)).map((w) => w.norm)).toEqual(["abandon", "abstract"]);
+  });
+
+  it("只读：查完 FSRS 字段与 review_logs 都不变", async () => {
+    await seed("2026-10-27T10:00:00+08:00", "abandon 放弃");
+    const before = await repo.getWordByNorm("abandon");
+    const logsBefore = await countLogs();
+
+    await repo.listTodayNewWords(day1);
+    await repo.listTodayNewWords(day1);
+
+    const after = await repo.getWordByNorm("abandon");
+    expect(before).not.toBeNull();
+    expect(after?.status).toBe(before?.status);
+    expect(after?.fsrs_state).toBe(before?.fsrs_state);
+    expect(after?.fsrs_due).toBe(before?.fsrs_due);
+    expect(after?.fsrs_reps).toBe(before?.fsrs_reps);
+    expect(after?.fsrs_lapses).toBe(before?.fsrs_lapses);
+    expect(after?.fsrs_last_review).toBe(before?.fsrs_last_review);
+    expect(await countLogs()).toBe(logsBefore);
+  });
+});

@@ -6,6 +6,7 @@ import { t } from "./i18n.ts";
 import { HomePage } from "./pages/HomePage.tsx";
 import { ReviewPage } from "./pages/ReviewPage.tsx";
 import { RereviewPage } from "./pages/RereviewPage.tsx";
+import { TodayPage } from "./pages/TodayPage.tsx";
 import { ImportPage } from "./pages/ImportPage.tsx";
 import { SearchPage } from "./pages/SearchPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
@@ -35,6 +36,15 @@ export function App() {
     return (
       <div className="h-full">
         <RereviewPage />
+      </div>
+    );
+  }
+
+  // 今日新词也是「一屏一张」，同样全屏
+  if (page === "today") {
+    return (
+      <div className="h-full">
+        <TodayPage />
       </div>
     );
   }

@@ -88,6 +88,17 @@ const MISSED_SQL = `
     )
     ORDER BY w.fsrs_due_day ASC, w.fsrs_stability ASC, w.id ASC`;
 
+/**
+ * 「今天新录入的词」的判定：落地时间落在今天这一天的区间里。
+ *
+ * 用 created_at 而不是 updated_at：后者会被每一次结算刷掉，
+ * 那样「今天录入」会变成「今天复习过」，和这个入口的语义正好相反。
+ * id 参与排序只是为了让同一毫秒录入的几个词有稳定顺序，洗牌在 domain 里做。
+ */
+const TODAY_NEW_SQL = `SELECT * FROM words
+    WHERE created_at >= ? AND created_at < ?
+    ORDER BY created_at ASC, id ASC`;
+
 export class SqliteRepo implements Repo {
   private db: Database | null = null;
   private cfgCache: SchedulerConfig | null = null;
@@ -194,6 +205,13 @@ export class SqliteRepo implements Repo {
     const cfg = await this.config();
     const { start, end } = dayRange(today, cfg.dayBoundaryHour);
     return db.select<WordRow[]>(MISSED_SQL, [start, end]);
+  }
+
+  async listTodayNewWords(today: string): Promise<WordRow[]> {
+    const db = await this.d();
+    const cfg = await this.config();
+    const { start, end } = dayRange(today, cfg.dayBoundaryHour);
+    return db.select<WordRow[]>(TODAY_NEW_SQL, [start, end]);
   }
 
   async settleWord(
