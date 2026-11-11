@@ -3,6 +3,54 @@
 本项目的所有重要变更都记录在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.4.0] - 2026-11-11
+
+本轮补上「录完当天就能再看一眼今天背的词」——**只读回看，不是复习**。
+首页只多一块入口，排程、持久化、设置项一律没动。
+
+### 新增
+
+- **今日新词回看**（`src/ui/pages/TodayPage.tsx` + 首页入口 + 录入页跳转）。
+  候选是 `words.created_at` 落在今天（按 `day_boundary_hour` 划界）的词。
+  卡片形态与「重新复习」（§4.3.6）一致：只显英文 → 点一下出中文，
+  **下面只有一个按钮**：「我记到了」→「下一张 / 看完了」。
+- `domain/scheduler/todayWords.ts`：`buildTodayWords(candidates, limit, rng)` 纯函数，
+  取前 limit 条后洗牌；`limit` 为 0 / 负数 / NaN 时当作**没有上限**（与 `buildRereview` 同一套策略）。
+- `Repo.listTodayNewWords(today)`：用 `dayRange` 划出今天的时间区间查 `created_at`。
+  **只读**，不改库、不结算、不写日志。
+- 首页新增一块 `再看一遍（今天录入 N 张）`，**N = 0 时整块不出现**；
+  录入页导入成功后多一个直接跳过去的按钮。
+- `Page` 联合类型新增 `"today"`；文案集中到 `t.todayWords`。
+
+### 关键设计：只读，因为它是一次翻看
+
+新词入库即计一次 Good（§5.5），第一个到期日在入库那一刻就由 FSRS 算定了 ——
+实测 `due_day` = 入库日 + 4 天（`test/repo.integration.test.ts`）。
+翻看若也结算，`reps` / `scheduled_days` 会被「今天多看了两眼」推着往前走，
+而 `maximum_interval = 50` 的全部意义是保证每个词在考前还能再见几次（§5.6.1）：
+为了看一眼把词推远，正好把它推离考前。
+
+同理，若允许翻看时点「背错了」，`lapses` 一涨就撞 `graduationOnLapses = 6`（§5.6），
+**刚录的词可能当天就被系统判定「我认了」直接丢出队列**。回看之所以安全，恰恰因为不判对错。
+
+所以这条路径**不写 `review_logs`、不动 `fsrs_*`、不写 `sessions`，也不计入首页「今日到期」**，
+结束页写死一句「翻看不会改动排程，也不算一次复习。」
+
+与「重新复习」（§4.3.6）的分工：那个看「今天**背错了**的词」（候选来自今天的 `review_logs`），
+这个看「今天**新录入**的词」（候选来自今天的 `words.created_at`）。
+两者都只读、候选互不重叠，先后顺序随意，互不冲突。
+
+### 测试
+
+**279 项全绿**（v0.3.0 是 266 项，本轮 +13）。
+
+- `test/todayWords.test.ts` **新增 7 项**，盯 domain 纯函数：空输入、候选少于 / 多于上限、
+  `limit = 0 / 负数 / NaN` 当作没有上限、输入数组不被改动、
+  洗牌后仍是同一个多重集、以及注入 `rng` 后出场顺序确实被打乱。
+- `test/repo.integration.test.ts` **新增 6 项** `listTodayNewWords` 用例，跑在真实 SQLite 上：
+  空库返回空数组、今天 vs 昨天不串味、凌晨 02:00 与 04:00 的边界小时、
+  结果按 `created_at` 正序、以及「查询前后 `words` 与 `review_logs` 一行都没变」。
+
 ## [0.3.0] - 2026-11-03
 
 本轮把复习从「过一遍」改成「练到会」：背错了的词在本轮里再来一遍，直到背对。
@@ -157,6 +205,7 @@
   当前交付的是免安装绿色版，拷整个文件夹即可运行。
 - AI 旁路（补义项 / 例句 / 辨析）未实现，`ai_enabled` 设置项留位。
 
+[0.4.0]: https://github.com/zwq-wd/study/releases/tag/v0.4.0
 [0.3.0]: https://github.com/zwq-wd/study/releases/tag/v0.3.0
 [0.2.0]: https://github.com/zwq-wd/study/releases/tag/v0.2.0
 [0.1.0]: https://github.com/zwq-wd/study/releases/tag/v0.1.0
