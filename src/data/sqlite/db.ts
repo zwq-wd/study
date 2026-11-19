@@ -6,43 +6,50 @@
  * - foreign_keys 是**每连接**属性，放进迁移只会影响迁移那一瞬间的连接，之后全 OFF
  * - busy_timeout 防瞬时锁冲突直接报错
  *
- * ── 为什么要包一层串行代理（v0.6.1）───────────────────────────────
+ * ── 为什么要串行（v0.6.1 起）──────────────────────────────────────
  * plugin-sql 底下是 sqlx 的连接池（默认最多 10 条）。每次 execute/select 都是
  * 「取一条 → 跑 → 归还」，**连续两条语句不保证落在同一条连接上**。
  *
  * 这会直接毁掉多语句事务：`BEGIN IMMEDIATE` 在连接 A 上拿到写锁后 A 归还进池，
  * 锁仍在 A 身上；下一条语句若被派给连接 B，B 处于 autocommit，直接写入 →
- * 立刻 `SQLITE_BUSY (code 5): database is locked`。这就是导入失败的那条报错。
+ * 立刻 `SQLITE_BUSY (code 5): database is locked`。
  *
- * 关键点：busy_timeout 只会等**别人**，不会等**自己池子里**那条握着锁的连接，
- * 所以调大超时没用；重试也没用 —— 只要 BEGIN 和后面的语句还落在不同连接上，
- * 每轮重试都会以同样的方式失败。
+ * 关键点：busy_timeout 只会等**别人**，不会等**自己池子里**那条握着锁的连接。
+ * 所以让同一时刻只有一条语句在飞 —— 池里就只会用到一条连接，
+ * BEGIN 与它后面的语句才会落在同一条上。
  *
- * 真正的修法：让同一时刻只有一条语句在飞。这样池里只会用到一条连接，
- * BEGIN 与它后面的语句必然复用同一条 —— 事务语义才真的成立。
- * 代价可以忽略（单用户桌面应用，一次一屏的操作），换来的是事务真的生效。
+ * ── 为什么不能靠「重入计数」（v0.6.3）────────────────────────────
+ * v0.6.2 用了一个全局 depth 标记来放行「事务体里的调用」。这在**并发**时是错的：
+ * 事务 A 正持着闸门在 await，此时事务 B 进来，看到 depth > 0 就以为自己也在
+ * 事务体内，直接放行 —— B 的 BEGIN 于是插进 A 的事务中间，重新撞上 code 5。
+ *
+ * 正确做法：事务**整段**占住一把不可重入的互斥锁，并且事务体里的语句走
+ * **绕过这把锁**的直连通道（拿到内层 Database 直接执行）。
+ * 这样既不互相插队，也不会自锁。
  */
 import Database from "@tauri-apps/plugin-sql";
 
 export const DB_URL = "sqlite:wordpacer.db";
 
 /**
- * 全局串行闸门。
+ * 不可重入的互斥锁。
  *
- * 保证两件事：
- * 1. 同一时刻只有一条语句在飞 → 连接池只会用到一条连接 → 事务语义成立；
- * 2. 多个调用方（比如游戏页那几个 Promise.all 查询）不会同时抢写锁。
+ * 它只保护「谁在用连接」这一件事，不做重入判断 —— 重入由调用方用
+ * bypassMutex 的直连通道解决（见 withTransaction）。
  */
-let gate: Promise<unknown> = Promise.resolve();
+let chain: Promise<unknown> = Promise.resolve();
 
-export function serializeDb<T>(fn: () => Promise<T>): Promise<T> {
-  const run = gate.then(fn, fn);
-  gate = run.then(
+export function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(fn, fn);
+  chain = run.then(
     () => undefined,
     () => undefined,
   );
   return run;
 }
+
+/** 兼容旧名字（测试里用过）。 */
+export const serializeDb = runExclusive;
 
 /** 一条语句失败后是否值得重试（锁冲突 = 值得）。 */
 const BUSY_PATTERN = /code:\s*5\b|database is locked|SQLITE_BUSY/i;
@@ -69,10 +76,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** 排队 + 遇锁退避重试。 */
-async function serialized<T>(fn: () => Promise<T>): Promise<T> {
+export async function withSerialDb<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await serializeDb(fn);
+      return await runExclusive(fn);
     } catch (err) {
       const delay = RETRY_DELAYS[attempt];
       if (delay === undefined || !isBusyError(err)) throw err;
@@ -81,14 +88,9 @@ async function serialized<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/**
- * 串行代理：`path` 与真实实例一致，execute / select 先排队再转发。
- *
- * 这里用「持有真实实例并转发」而不是继承，是因为 Database 的 execute/select
- * 都只依赖 this.path 去调 IPC —— 转发语义更清楚，也不会误伤 close()。
- */
+/** 串行代理：普通语句走互斥锁，另提供绕过锁的直连通道给事务用。 */
 class SerialDatabase extends Database {
-  constructor(private readonly inner: Database) {
+  constructor(readonly inner: Database) {
     super(inner.path);
   }
 
@@ -96,12 +98,27 @@ class SerialDatabase extends Database {
     sql: string,
     values?: unknown[],
   ): Promise<{ rowsAffected: number; lastInsertId?: number }> {
-    return serialized(() => this.inner.execute(sql, values));
+    return withSerialDb(() => this.inner.execute(sql, values));
   }
 
   override select<T>(sql: string, values?: unknown[]): Promise<T> {
-    return serialized(() => this.inner.select<T>(sql, values));
+    return runExclusive(() => this.inner.select<T>(sql, values));
   }
+}
+
+/**
+ * 取这个 Executor 的「直连通道」。
+ *
+ * 事务已经占住互斥锁了，它内部的语句**必须**绕过锁，否则会等自己。
+ * 对测试用的假 driver（不带 SerialDatabase 结构），直接返回它本身 ——
+ * 假 driver 内部不排队，在持锁状态下直接调用是安全的。
+ */
+export function directExecutor<T>(db: T): T {
+  const inner = (db as unknown as { inner?: unknown }).inner;
+  if (inner !== undefined && typeof inner === "object" && inner !== null) {
+    return inner as T;
+  }
+  return db;
 }
 
 let dbPromise: Promise<Database> | null = null;
@@ -109,7 +126,6 @@ let dbPromise: Promise<Database> | null = null;
 export function getDb(): Promise<Database> {
   if (!dbPromise) {
     dbPromise = (async () => {
-      // load 会触发 Rust 侧的连接与迁移；拿到的实例带着解析后的真实路径。
       const inner = await Database.load(DB_URL);
       const db = new SerialDatabase(inner);
       await db.execute("PRAGMA journal_mode = WAL");

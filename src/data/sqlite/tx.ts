@@ -4,16 +4,23 @@
  * plugin-sql 的事务接口较薄：BEGIN → 语句 → COMMIT，失败 ROLLBACK。
  * **业务层不手写 BEGIN**，一律走这里。
  *
- * 事务能不能真的生效，取决于「BEGIN 和它后面的语句是否落在同一条连接上」。
- * plugin-sql 本身做不到（见 db.ts 顶部的注释与 test/lock.test.ts），
- * 所以 db.ts 给 Database 套了全局串行代理：同一时刻只有一条语句在飞。
- * 这里只需要老老实实按 BEGIN / COMMIT / ROLLBACK 走，就会真的在一个事务里。
+ * ── 为什么 fn 会拿到一个 tx 参数 ─────────────────────────────────
+ * 事务能成立要同时满足三件事：
+ *   1. 整段事务占住互斥锁（别的事务不能把语句插进来）；
+ *   2. 事务体里的语句**绕过**那把锁（否则等自己 → 死锁）；
+ *   3. 这些语句落在同一条连接上（靠 1 保证：同一时刻只有一条语句在飞）。
  *
- * 额外补一层 BUSY 重试：即便队列已经串行，外部进程（备份工具、另一个实例）
- * 仍可能短暂占着写锁，这时按退避重试，而不是把 `code 5` 直接抛给用户。
+ * 第 2 条不能靠「全局 depth 标记」——并发时 A 持锁等 IO，B 看到 depth>0
+ * 就以为自己也在事务体内，直接插队，重新撞上 code 5（v0.6.2 的真实故障）。
+ * 也不能靠「调用方继续用外层 db」——那个 db 的 execute 还会去排队。
+ *
+ * 所以做成**显式**的：fn 收到的 tx 是直连通道，事务体里必须用它，
+ * 用外层 db 就会自己等自己。类型上 tx 就是 Executor，写错了编译器会提醒。
+ *
+ * 历史三次踩坑：不串行（code 5）→ 两层串行（死锁）→ 全局 depth（并发插队）。
  */
 import type Database from "@tauri-apps/plugin-sql";
-import { isBusyError, serializeDb } from "./db.ts";
+import { directExecutor, withSerialDb } from "./db.ts";
 
 /** 一个能执行语句的最小接口，方便单测替换。 */
 export interface Executor {
@@ -21,49 +28,38 @@ export interface Executor {
   select<T>(sql: string, values?: unknown[]): Promise<T>;
 }
 
-/** 退避序列（毫秒）：约 2s，够跨过别的写入方一次 commit。 */
-const RETRY_DELAYS = [20, 40, 80, 160, 320, 640, 640] as const;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 let txSeq = 0;
 
 /**
  * 在一个事务里跑 fn。
  *
- * `fn` 必须只在事务体内调用 ExecuteStatement（用传进来的 db）。
- * 它**必须是幂等的**：BUSY 重试会把整段再跑一次。
+ * `fn` 收到的 `tx` 是绕过互斥锁的直连通道 —— **事务体里所有语句都必须用它**。
+ * 整段占锁，所以别的事务不可能插进来。
+ *
+ * BUSY 时整段重试，因此 fn 必须幂等（当前三个调用点都是）。
  */
-export async function withTransaction<T>(db: Executor, fn: () => Promise<T>): Promise<T> {
+export function withTransaction<T>(
+  db: Executor,
+  fn: (tx: Executor) => Promise<T>,
+): Promise<T> {
   txSeq += 1;
+  const conn = directExecutor(db);
 
-  for (let attempt = 0; ; attempt++) {
+  return withSerialDb(async () => {
+    await conn.execute("BEGIN IMMEDIATE");
     try {
-      return await serializeDb(async () => {
-        await db.execute("BEGIN IMMEDIATE");
-        try {
-          const out = await fn();
-          await db.execute("COMMIT");
-          return out;
-        } catch (err) {
-          try {
-            await db.execute("ROLLBACK");
-          } catch {
-            // 回滚失败时不要盖掉原始错误
-          }
-          throw err;
-        }
-      });
+      const out = await fn(conn);
+      await conn.execute("COMMIT");
+      return out;
     } catch (err) {
-      const delay = RETRY_DELAYS[attempt];
-      if (delay === undefined || !isBusyError(err)) throw err;
-      await sleep(delay);
+      try {
+        await conn.execute("ROLLBACK");
+      } catch {
+        // 回滚失败时不要盖掉原始错误
+      }
+      throw err;
     }
-  }
+  });
 }
 
 /** 开过多少个事务（测试用）。 */

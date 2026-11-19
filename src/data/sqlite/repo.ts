@@ -237,8 +237,8 @@ export class SqliteRepo implements Repo {
     const dueDay = dayKey(outcome.card.due, cfg.dayBoundaryHour);
     const status = outcome.graduated ? "graduated" : word.status;
 
-    await withTransaction(db, async () => {
-      await db.execute(
+    await withTransaction(db, async (tx) => {
+      await tx.execute(
         `UPDATE words SET
            status = ?, fsrs_state = ?, fsrs_due = ?, fsrs_due_day = ?,
            fsrs_stability = ?, fsrs_difficulty = ?, fsrs_reps = ?, fsrs_lapses = ?,
@@ -398,7 +398,7 @@ export class SqliteRepo implements Repo {
     );
     const idByNorm = new Map(existingRows.map((r) => [r.norm, r.id]));
 
-    await withTransaction(db, async () => {
+    await withTransaction(db, async (tx) => {
       // --- 新词：一条多值 INSERT（§7.5 唯一的性能坑）
       if (toInsert.length > 0) {
         const created = newWordCard(now, cfg);
@@ -430,7 +430,7 @@ export class SqliteRepo implements Repo {
           return "(" + new Array(18).fill("?").join(", ") + ")";
         });
 
-        await db.execute(
+        await tx.execute(
           `INSERT INTO words
              (headword, norm, phonetic, source, note, example_json, status,
               fsrs_state, fsrs_due, fsrs_due_day, fsrs_stability, fsrs_difficulty,
@@ -443,7 +443,7 @@ export class SqliteRepo implements Repo {
 
         // --- 新词的 L1 义项（layer=1, origin=manual）
         // 一次性把所有 new 词 id 取回来，再按 norm 分组插义项。
-        const fresh = await db.select<Array<{ id: number; norm: string }>>(
+        const fresh = await tx.select<Array<{ id: number; norm: string }>>(
           "SELECT id, norm FROM words",
         );
         const newIdByNorm = new Map(fresh.map((r) => [r.norm, r.id]));
@@ -458,7 +458,7 @@ export class SqliteRepo implements Repo {
           });
         });
         if (senseTuples.length > 0) {
-          await db.execute(
+          await tx.execute(
             `INSERT INTO senses(word_id, meaning_cn, layer, origin, sort, created_at)
              VALUES ${senseTuples.join(", ")}`,
             senseValues,
@@ -483,7 +483,7 @@ export class SqliteRepo implements Repo {
           );
           return "(" + new Array(10).fill("?").join(", ") + ")";
         });
-        await db.execute(
+        await tx.execute(
           `INSERT INTO review_logs
              (word_id, rating, state_before, state_after, due_after, stability_after,
               difficulty_after, elapsed_days, reviewed_at, session_id)
@@ -504,7 +504,7 @@ export class SqliteRepo implements Repo {
             values.push(wordId, m, 2, "manual", 0, nowMs);
             return "(" + new Array(6).fill("?").join(", ") + ")";
           });
-          await db.execute(
+          await tx.execute(
             `INSERT INTO senses(word_id, meaning_cn, layer, origin, sort, created_at)
              VALUES ${tuples.join(", ")}`,
             values,
@@ -743,17 +743,17 @@ export class SqliteRepo implements Repo {
     let appendedSenses = 0;
     let skipped = 0;
 
-    await withTransaction(db, async () => {
+    await withTransaction(db, async (tx) => {
       if (mode === "replace") {
         // 应用层级联，不依赖数据库外键（§8.5 风险提示）
-        await db.execute("DELETE FROM review_logs");
-        await db.execute("DELETE FROM senses");
-        await db.execute("DELETE FROM words");
-        await db.execute("DELETE FROM sessions");
+        await tx.execute("DELETE FROM review_logs");
+        await tx.execute("DELETE FROM senses");
+        await tx.execute("DELETE FROM words");
+        await tx.execute("DELETE FROM sessions");
       }
 
       // 现有词 → id 映射
-      const existing = await db.select<Array<{ id: number; norm: string }>>(
+      const existing = await tx.select<Array<{ id: number; norm: string }>>(
         "SELECT id, norm FROM words",
       );
       const idByNorm = new Map(existing.map((r) => [r.norm, r.id]));
@@ -763,7 +763,7 @@ export class SqliteRepo implements Repo {
 
         if (existingId === undefined) {
           // 新词
-          await db.execute(
+          await tx.execute(
             `INSERT INTO words
                (headword, norm, phonetic, source, note, example_json, status,
                 fsrs_state, fsrs_due, fsrs_due_day, fsrs_stability, fsrs_difficulty,
@@ -790,7 +790,7 @@ export class SqliteRepo implements Repo {
               now,
             ],
           );
-          const got = await db.select<Array<{ id: number }>>(
+          const got = await tx.select<Array<{ id: number }>>(
             "SELECT id FROM words WHERE norm = ?",
             [w.norm],
           );
@@ -802,7 +802,7 @@ export class SqliteRepo implements Repo {
           }
         } else {
           // merge：以导入文件为准更新
-          await db.execute(
+          await tx.execute(
             `UPDATE words SET
                headword = ?, phonetic = ?, source = ?, note = ?, status = ?,
                fsrs_state = ?, fsrs_due = ?, fsrs_due_day = ?, fsrs_stability = ?,
@@ -828,7 +828,7 @@ export class SqliteRepo implements Repo {
               existingId,
             ],
           );
-          await db.execute("DELETE FROM senses WHERE word_id = ?", [existingId]);
+          await tx.execute("DELETE FROM senses WHERE word_id = ?", [existingId]);
           await this.insertSenses(existingId, w.senses, now);
           appendedSenses += w.senses.length;
           skipped++;
@@ -842,7 +842,7 @@ export class SqliteRepo implements Repo {
           values.push(k, String(v), now);
           return "(?, ?, ?)";
         });
-        await db.execute(
+        await tx.execute(
           `INSERT INTO settings(key, value, updated_at) VALUES ${tuples.join(", ")}
            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
           values,

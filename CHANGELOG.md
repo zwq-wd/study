@@ -3,6 +3,39 @@
 本项目的所有重要变更都记录在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.2] - 2026-11-19
+
+修好 v0.6.1 引入的**导入死锁**，并补上真正的事务隔离。
+
+### 修复
+
+- **导入点了没反应**：v0.6.1 在 `db.ts` 里加了一道串行闸门，`tx.ts` 的
+  `withTransaction` 又加了一道 —— 外层拿锁等内层，内层等外层，永远等不到。
+  现在只有**一道**锁，由 `withTransaction` 整段持有。
+- **事务会被别的事务插队**：只把串行做到「语句级」时，实际时序是
+  `BEGIN A / BEGIN B / INSERT a / INSERT b / COMMIT / COMMIT` ——
+  B 的 BEGIN 插进了 A 事务中间，A 的 COMMIT 把两边的写一起提交。
+  现在事务**整段**占锁，日志严格是 `BEGIN a / INSERT a / COMMIT / BEGIN b / …`。
+- **并发时仍然 code 5**：v0.6.2 一度用全局 `depth` 做「重入」判断，
+  但并发时事务 A 持锁等 IO，事务 B 看到 `depth > 0` 就以为自己也在事务体内、
+  直接放行插队。废弃该做法，改成**显式**直连通道：`withTransaction(db, fn)`
+  把绕开锁的 `tx` 交给 `fn`，事务体里所有语句必须用 `tx`。
+
+### 测试
+
+**363 项全绿**（v0.6.1 是 359 项），连跑 5 次无抖动。
+
+- `test/lock.test.ts` 8 项：认出 code 5、不误判、`directExecutor` 取直连通道、
+  事务体多次 execute 不自锁、两个并发事务严格不交叉（逐条比对日志）、
+  抛错时真的 ROLLBACK、以及「不串行时并发事务必 BUSY」的根因复现。
+- `test/import-pooled.test.ts` 3 项：把 `SqliteRepo` 的**真实导入路径**跑在
+  带连接池语义的 driver 上（并发才开第二条连接），覆盖正常导入不报 code 5、
+  两次导入并发互不打断、同词重复导入走追加义项。
+- 已验证这组测试有约束力：把事务改回「不串行」，`import-pooled` 立刻红。
+
+真实环境验证：0.6.2 运行中，外部并发 8 次导入规模的事务全部成功、0 次 BUSY；
+库仍为 835 词，`integrity ok`。
+
 ## [0.6.1] - 2026-11-19
 
 修复导入时报 `error returned from database: (code: 5) database is locked`。
@@ -335,6 +368,7 @@
   当前交付的是免安装绿色版，拷整个文件夹即可运行。
 - AI 旁路（补义项 / 例句 / 辨析）未实现，`ai_enabled` 设置项留位。
 
+[0.6.2]: https://github.com/zwq-wd/study/releases/tag/v0.6.2
 [0.6.1]: https://github.com/zwq-wd/study/releases/tag/v0.6.1
 [0.6.0]: https://github.com/zwq-wd/study/releases/tag/v0.6.0
 [0.5.0]: https://github.com/zwq-wd/study/releases/tag/v0.5.0
