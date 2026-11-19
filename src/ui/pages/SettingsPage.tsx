@@ -11,6 +11,7 @@ import {
   normalizeConfig,
   type SchedulerConfig,
 } from "../../domain/scheduler/config.ts";
+import type { Difficulty } from "../../domain/game/types.ts";
 import { parseBundleText, toCsv } from "../../domain/export.ts";
 import { getRepo, loadConfig } from "../repoClient.ts";
 import { openTextFile, saveTextFile, todayKey } from "../files.ts";
@@ -18,12 +19,28 @@ import { useApp } from "../store.ts";
 import { t } from "../i18n.ts";
 import { AiSettingsSection } from "./AiSettingsSection.tsx";
 
+/**
+ * 游戏模式的设置键。和 GamePage 里读写的完全是同一对键，
+ * 所以这里改完，回游戏页（或重开一局）立刻生效。
+ */
+const GAME_DIFFICULTY_KEY = "game_difficulty";
+const GAME_SOUND_KEY = "game_sound";
+
+/** settings 表里存的是字符串，读回来要当成 unknown 再收窄，不能直接信。 */
+function parseGameDifficulty(v: string | undefined): Difficulty {
+  return v === "easy" || v === "hard" ? v : "normal";
+}
+
 export function SettingsPage() {
   const [cfg, setCfg] = useState<SchedulerConfig | null>(null);
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [gameDifficulty, setGameDifficulty] = useState<Difficulty>("normal");
+  const [gameSound, setGameSound] = useState(false);
+  // 和上面的 saved 分开：那个是排程参数改动的提示，别串到这一组来
+  const [gameSaved, setGameSaved] = useState(false);
 
   const setStoreConfig = useApp((s) => s.setConfig);
   const bumpStats = useApp((s) => s.bumpStats);
@@ -36,6 +53,25 @@ export function SettingsPage() {
     })();
   }, [setStoreConfig]);
 
+  // 游戏模式的偏好和排程参数不是一回事（存的是字符串、不参与 normalize），单独读一次
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const repo = await getRepo();
+        const rows = await repo.loadSettings();
+        if (!alive) return;
+        setGameDifficulty(parseGameDifficulty(rows[GAME_DIFFICULTY_KEY]));
+        setGameSound(rows[GAME_SOUND_KEY] === "1");
+      } catch {
+        // 读不到就用默认值，不打断设置页
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const patch = async (key: keyof SchedulerConfig, value: number | boolean) => {
     if (!cfg) return;
     const next = normalizeConfig({ ...cfg, [key]: value });
@@ -47,6 +83,25 @@ export function SettingsPage() {
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1200);
     bumpStats();
+  };
+
+  /** 游戏偏好不走 normalizeConfig —— 它不在 SchedulerConfig 里，也不影响排程。 */
+  const saveGameSetting = async (row: Record<string, string>) => {
+    const repo = await getRepo();
+    await repo.saveSettings(row);
+    setGameSaved(true);
+    window.setTimeout(() => setGameSaved(false), 1200);
+  };
+
+  const chooseDifficulty = (d: Difficulty) => {
+    setGameDifficulty(d);
+    void saveGameSetting({ [GAME_DIFFICULTY_KEY]: d });
+  };
+
+  const toggleSound = () => {
+    const next = !gameSound;
+    setGameSound(next);
+    void saveGameSetting({ [GAME_SOUND_KEY]: next ? "1" : "0" });
   };
 
   const exportJson = async () => {
@@ -246,6 +301,70 @@ export function SettingsPage() {
         </div>
 
         <AiSettingsSection />
+
+        {/* ─── 游戏模式 ───────────────────────────────────────────────
+            放在最后，和排程参数、AI 都分开：它不影响排程，也不写复习记录。
+            控件沿用本页既有那套（switch 用 role="switch" + aria-checked，
+            三选一用 btn-ghost 表示选中），不另造一套。 */}
+        <div className="mt-8">
+          <div className="flex items-baseline justify-between">
+            <div className="text-sm text-paper">{t.game.settingsTitle}</div>
+            {gameSaved && <span className="text-xs text-accent">{t.settingsPage.saved}</span>}
+          </div>
+          {/* 这句必须写：不然用户会以为玩游戏等于复习过了 */}
+          <p className="mt-1 text-xs leading-5 text-paper-dim">{t.game.settingsHint}</p>
+
+          <div className="@container mt-3 divide-y divide-ink-line/60 overflow-hidden rounded-lg border border-line-strong">
+            {/* 默认难度 */}
+            <div className="grid grid-cols-1 gap-x-4 gap-y-1.5 px-4 py-3.5 @[560px]:grid-cols-[8rem_auto_1fr] @[560px]:items-start @[560px]:gap-y-0">
+              <div className="text-sm text-paper">{t.game.defaultDifficulty}</div>
+              <div className="flex items-center gap-2">
+                {(["easy", "normal", "hard"] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={gameDifficulty === d}
+                    onClick={() => chooseDifficulty(d)}
+                    className={
+                      gameDifficulty === d
+                        ? "btn-ghost border-accent px-2 py-0.5 text-xs text-accent"
+                        : "btn-ghost px-2 py-0.5 text-xs text-paper-dim"
+                    }
+                  >
+                    {t.game.difficulty[d]}
+                  </button>
+                ))}
+              </div>
+              <div className="text-xs leading-5 text-paper-dim">
+                {t.game.difficultyDesc[gameDifficulty]}
+              </div>
+            </div>
+
+            {/* 音效 */}
+            <div className="grid grid-cols-1 gap-x-4 gap-y-1.5 px-4 py-3.5 @[560px]:grid-cols-[8rem_6rem_1fr] @[560px]:items-start @[560px]:gap-y-0">
+              <div className="text-sm text-paper">{t.game.soundToggle}</div>
+              <div className="text-sm text-accent">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={gameSound}
+                  aria-label={t.game.soundToggle}
+                  onClick={toggleSound}
+                  className={`relative h-5 w-9 rounded-full border transition-colors ${
+                    gameSound ? "border-accent bg-accent/25" : "border-ink-line bg-well"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all ${
+                      gameSound ? "left-[18px] bg-accent" : "left-0.5 bg-paper-faint"
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="text-xs leading-5 text-paper-dim">{t.game.soundToggleDesc}</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

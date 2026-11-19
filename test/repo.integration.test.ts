@@ -512,3 +512,150 @@ describe("今日新词 listTodayNewWords", () => {
     expect(await countLogs()).toBe(logsBefore);
   });
 });
+
+/**
+ * 游戏模式的取数：`gameTodayPool` 与 `listDistractors`。
+ *
+ * 这两条也跑真实 SQLite —— 要验证的是「两个来源按同一条日边界各查一次、
+ * 释义用一次 IN 查询附带回来」在 SQL 里真的成立，以及游戏**只读**这条红线
+ * 在数据层没被破掉（查完 FSRS 字段与 review_logs 一个都不能变）。
+ */
+describe("游戏模式取数", () => {
+  const day1 = "2026-11-01";
+
+  function rawDb(): { select: <T>(sql: string) => Promise<T> } {
+    return (repo as unknown as { db: { select: <T>(sql: string) => Promise<T> } }).db;
+  }
+
+  async function countLogs(): Promise<number> {
+    const rows = await rawDb().select<Array<{ n: number }>>("SELECT COUNT(*) AS n FROM review_logs");
+    return rows[0]?.n ?? 0;
+  }
+
+  async function seed(atIso: string, raw: string): Promise<void> {
+    const plan = await repo.planImport(raw, new Date(atIso));
+    await repo.commitImport(plan, new Date(atIso));
+  }
+
+  it("空库：两个来源都是空数组（不是 null、不是抛错）", async () => {
+    const pool = await repo.gameTodayPool(day1);
+    expect(pool.missed).toEqual([]);
+    expect(pool.fresh).toEqual([]);
+  });
+
+  it("今日新词进 fresh，昨天录入的不进", async () => {
+    await seed("2026-10-31T10:00:00+08:00", "abstract 抽象的");
+    await seed("2026-11-01T10:00:00+08:00", "abandon 放弃");
+
+    const pool = await repo.gameTodayPool(day1);
+    expect(pool.fresh.map((w) => w.norm)).toEqual(["abandon"]);
+    expect(pool.missed).toEqual([]);
+  });
+
+  it("今天背错的词进 missed，Good 的不进", async () => {
+    await seed("2026-11-01T09:00:00+08:00", "abandon 放弃\nabstract 抽象的");
+    const a = await repo.getWordByNorm("abandon");
+    const b = await repo.getWordByNorm("abstract");
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T10:00:00+08:00"), null);
+    await repo.settleWord(b!.id, Rating.Good, at("2026-11-01T10:05:00+08:00"), null);
+
+    const pool = await repo.gameTodayPool(day1);
+    expect(pool.missed.map((w) => w.norm)).toEqual(["abandon"]);
+  });
+
+  /**
+   * 这是「今日池子 = 错词 ∪ 新词」那条产品口径在数据层的证据：
+   * 同一天里既录入了新词、又把老词背错了，两个来源都各自返回，互不吞并。
+   * 合并去重是 domain/game/pool.ts 的职责（那边有纯函数单测），这里只看原料对不对。
+   */
+  it("同一天既有新词又有错词：两个来源各自返回，且都带上了 L1 释义", async () => {
+    await seed("2026-11-01T08:00:00+08:00", "banana 香蕉");
+    await seed("2026-11-01T09:00:00+08:00", "abandon 放弃；抛弃");
+
+    const a = await repo.getWordByNorm("abandon");
+    expect(a).not.toBeNull();
+    await repo.settleWord(a!.id, Rating.Again, at("2026-11-01T10:00:00+08:00"), null);
+
+    const pool = await repo.gameTodayPool(day1);
+
+    const newNorms = pool.fresh.map((w) => w.norm);
+    expect(newNorms).toContain("banana");
+    expect(newNorms).toContain("abandon");
+    expect(pool.missed.map((w) => w.norm)).toEqual(["abandon"]);
+
+    // 释义必须随行一起回来 —— 少了它，出题层就得逐词再查一次（N+1 次 IPC，§7.5 禁止）
+    const abandon = pool.fresh.find((w) => w.norm === "abandon");
+    expect(abandon).toBeDefined();
+    expect(abandon?.senses.map((s) => s.meaning_cn)).toEqual(["放弃", "抛弃"]);
+  });
+
+  it("边界小时生效：凌晨 2 点算前一天（和 listMissedToday 走同一条时间轴）", async () => {
+    await seed("2026-11-02T02:00:00+08:00", "abandon 放弃");
+
+    expect((await repo.gameTodayPool(day1)).fresh.map((w) => w.norm)).toEqual(["abandon"]);
+    expect((await repo.gameTodayPool("2026-11-02")).fresh).toEqual([]);
+  });
+
+  it("只读：查完 FSRS 字段与 review_logs 一个都不变", async () => {
+    await seed("2026-11-01T09:00:00+08:00", "abandon 放弃");
+    const before = await repo.getWordByNorm("abandon");
+    const logsBefore = await countLogs();
+
+    await repo.gameTodayPool(day1);
+    await repo.gameTodayPool(day1);
+
+    const after = await repo.getWordByNorm("abandon");
+    expect(before).not.toBeNull();
+    expect(after?.fsrs_reps).toBe(before?.fsrs_reps);
+    expect(after?.fsrs_lapses).toBe(before?.fsrs_lapses);
+    expect(after?.fsrs_due).toBe(before?.fsrs_due);
+    expect(after?.fsrs_due_day).toBe(before?.fsrs_due_day);
+    expect(await countLogs()).toBe(logsBefore);
+  });
+
+  it("listDistractors：只给 L1 释义，带 headword 与 word_id，够抽 3 个干扰项", async () => {
+    await seed("2026-11-01T09:00:00+08:00", "abandon 放弃\napple 苹果\nbanana 香蕉\nriver 河流");
+
+    const got = await repo.listDistractors(20);
+    expect(got.length).toBe(4);
+    for (const c of got) {
+      expect(c.meaningCn.length).toBeGreaterThan(0);
+      expect(c.headword.length).toBeGreaterThan(0);
+      expect(typeof c.wordId).toBe("number");
+    }
+    // 用集合比，不比顺序：ORDER BY RANDOM() 的返回顺序本来就不该被断言，
+    // 而中文按 UTF-16 码位排序也不是人类语序（「放」在「河」前面）。
+    expect(new Set(got.map((c) => c.meaningCn))).toEqual(
+      new Set(["苹果", "河流", "放弃", "香蕉"]),
+    );
+  });
+
+  /**
+   * L2 补充义项不能进干扰项池。
+   *
+   * 复习页里 L2 在 fsrs_reps >= 3 之前是不可见的（domain/senses.ts）。干扰项池
+   * 若把 L2 也捞出来，一个玩家还没「复习满三次」的补充释义会先在游戏里露脸。
+   */
+  it("listDistractors：L2 补充义项不进池", async () => {
+    await seed("2026-11-01T09:00:00+08:00", "abandon 放弃");
+    const a = await repo.getWordByNorm("abandon");
+    expect(a).not.toBeNull();
+    await repo.addSense(a!.id, "抛弃（补充）", "manual");
+
+    const got = await repo.listDistractors(20);
+    expect(got.map((c) => c.meaningCn)).toEqual(["放弃"]);
+  });
+
+  it("listDistractors：limit 生效，且越界不崩", async () => {
+    await seed("2026-11-01T09:00:00+08:00", "abandon 放弃\napple 苹果\nbanana 香蕉");
+
+    expect((await repo.listDistractors(2)).length).toBe(2);
+    // 0 / 负数收敛成 1，超大值收敛到上限 —— 契约是「不崩」，不是「按你填的来」
+    expect((await repo.listDistractors(0)).length).toBeGreaterThanOrEqual(1);
+    expect((await repo.listDistractors(-5)).length).toBeGreaterThanOrEqual(1);
+    expect((await repo.listDistractors(999_999)).length).toBe(3);
+  });
+});

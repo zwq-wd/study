@@ -6,6 +6,10 @@
  *
  * 无图表、无热力图、无连击。「今日到期」数字是唯一醒目的元素。
  * 队列为空时显示「今天没有到期。」+ 一个「录入新词」按钮。
+ *
+ * 「喂肥鱼」是页面末尾的一行低存在感入口，不是一个信息块：
+ * 它排在「重新复习」「再看一遍」之后、底部按钮之前，用 btn-ghost + 一行小字，
+ * 不抢光、不挂 badge、不做动效。首页仍然是排程器，不是游戏大厅。
  */
 import { useEffect, useState } from "react";
 import type { HomeStats } from "../../data/types.ts";
@@ -81,6 +85,12 @@ export function HomePage() {
   );
 
   const showBackup = backupDays === null || backupDays > 7;
+
+  /**
+   * 游戏池子是「今天背错的 + 今天新录入的」，正好就是这两个数。
+   * 都是 0 = 没有题可出，入口置灰 —— 不为了判断这个再查一次库。
+   */
+  const gamePoolEmpty = todayCount === 0 && missedCount === 0;
 
   return (
     <div className="mx-auto flex h-full max-w-xl flex-col justify-center gap-8 px-10 py-12">
@@ -209,6 +219,25 @@ export function HomePage() {
         </div>
       )}
 
+      {/* 喂肥鱼：一局游戏，不是一段复习。
+          排在「重新复习」「再看一遍」之后 —— 那两个是「今天的数据」的另一种读法，
+          这一行只是玩法上的零食，所以用最低存在感的入口行，不抢「今日到期」的光。
+          池子空 = 今天既没背错也没新录入的词，游戏没有题可出，置灰。 */}
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setPage("game")}
+          disabled={gamePoolEmpty}
+          className="btn-ghost shrink-0"
+        >
+          {t.game.nav}
+        </button>
+        <span className="text-xs leading-5 text-paper-faint">
+          {gamePoolEmpty ? t.game.poolEmpty : t.game.poolLine(missedCount, todayCount)}
+        </span>
+      </div>
+
+      {/* 底部入口：录入 / 查询 / 刷新 */}
       <div className="flex gap-3 text-sm">
         <button
           type="button"

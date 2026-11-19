@@ -7,7 +7,16 @@ import { create } from "zustand";
 import type { SchedulerConfig } from "../domain/scheduler/config.ts";
 import { DEFAULT_CONFIG } from "../domain/scheduler/config.ts";
 
-export type Page = "home" | "review" | "rereview" | "today" | "import" | "search" | "settings";
+export type Page =
+  | "home"
+  | "review"
+  | "rereview"
+  | "today"
+  | "import"
+  | "search"
+  | "settings"
+  /** 游戏模式（喂肥鱼）。全屏，不参与排程。 */
+  | "game";
 
 interface AppState {
   page: Page;

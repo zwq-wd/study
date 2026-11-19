@@ -15,6 +15,8 @@ import { getDb, checkpoint } from "./db.ts";
 import { withTransaction } from "./tx.ts";
 import type {
   ExportBundle,
+  GamePoolSnapshot,
+  GamePoolWord,
   HomeStats,
   ImportMode,
   ImportPlan,
@@ -33,6 +35,7 @@ import { toCard, fromCard } from "../../domain/scheduler/card.ts";
 import { dayKey, dayRange } from "../../domain/time.ts";
 import { buildBundle } from "../../domain/export.ts";
 import { computeStats } from "../../domain/stats.ts";
+import type { DistractorCandidate } from "../../domain/game/types.ts";
 
 /** 设置表里排程参数的键名（下划线风格，和导出 JSON 一致）。 */
 export const SETTING_KEYS = {
@@ -278,6 +281,62 @@ export class SqliteRepo implements Repo {
     });
 
     return { nextDueDay: dueDay, graduated: outcome.graduated };
+  }
+
+  // ------------------------------------------------------------ 游戏模式
+
+  async gameTodayPool(today: string): Promise<GamePoolSnapshot> {
+    const db = await this.d();
+    const cfg = await this.config();
+    const { start, end } = dayRange(today, cfg.dayBoundaryHour);
+
+    // 两条来源各查一次，然后**一次性**把涉及的 senses 取回来（不做 N+1，§7.5）
+    const [missed, fresh] = await Promise.all([
+      db.select<WordRow[]>(MISSED_SQL, [start, end]),
+      db.select<WordRow[]>(TODAY_NEW_SQL, [start, end]),
+    ]);
+
+    const ids = new Set<number>();
+    for (const w of missed) ids.add(w.id);
+    for (const w of fresh) ids.add(w.id);
+    if (ids.size === 0) return { missed: [], fresh: [] };
+
+    const senses: SenseRow[] = [];
+    for (const part of chunks([...ids])) {
+      const placeholders = part.map(() => "?").join(",");
+      const rows = await db.select<SenseRow[]>(
+        `SELECT * FROM senses WHERE word_id IN (${placeholders})
+           ORDER BY word_id, layer, sort, id`,
+        part,
+      );
+      senses.push(...rows);
+    }
+
+    const sensesByWord = new Map<number, SenseRow[]>();
+    for (const s of senses) {
+      const list = sensesByWord.get(s.word_id);
+      if (list) list.push(s);
+      else sensesByWord.set(s.word_id, [s]);
+    }
+
+    const attach = (rows: WordRow[]): GamePoolWord[] =>
+      rows.map((w) => ({ ...w, senses: sensesByWord.get(w.id) ?? [] }));
+
+    return { missed: attach(missed), fresh: attach(fresh) };
+  }
+
+  async listDistractors(limit = 400): Promise<DistractorCandidate[]> {
+    const db = await this.d();
+    const safe = Math.min(Math.max(Math.floor(limit), 1), 2000);
+    const rows = await db.select<Array<{ meaning_cn: string; headword: string; word_id: number }>>(
+      `SELECT s.meaning_cn AS meaning_cn, w.headword AS headword, w.id AS word_id
+         FROM senses s JOIN words w ON w.id = s.word_id
+        WHERE s.layer = 1 AND length(trim(s.meaning_cn)) > 0
+        ORDER BY RANDOM()
+        LIMIT ?`,
+      [safe],
+    );
+    return rows.map((r) => ({ meaningCn: r.meaning_cn, headword: r.headword, wordId: r.word_id }));
   }
 
   // ------------------------------------------------------------ 录入

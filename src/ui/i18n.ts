@@ -191,6 +191,122 @@ export const t = {
     aiTestWeak: "请求通了，但没识别出测试用的错拼词。模型可能太弱或返回格式不符。",
     aiTestFailed: (reason: string) => `测试失败：${reason}`,
   },
+  /**
+   * 游戏模式。刻意写得像个游戏而不是学习工具：
+   * 这里允许出现「饿」「催」「被吃掉」—— 它是一局游戏，不是排程器的一部分。
+   * 但也不做愧疚感：不写「你已连续 N 天」，不写「再不背就完了」。
+   */
+  game: {
+    nav: "喂肥鱼",
+    title: "打饭喂肥鱼",
+    tagline: "答对一个打一勺，五个词打满一碗。肥鱼只吃白饭。",
+
+    /** 选难度 */
+    pickTitle: "今天怎么喂",
+    pickHint: "难度只改它饿的速度。随时可以重开换档。",
+    difficulty: {
+      easy: "易",
+      normal: "中",
+      hard: "难",
+    },
+    difficultyDesc: {
+      easy: "12 秒掉一格 · 适合边听歌边玩",
+      normal: "8 秒掉一格 · 得一直答",
+      hard: "5 秒掉一格 · 手不能停",
+    },
+    start: "开机打饭",
+    poolLine: (missed: number, fresh: number) =>
+      `今天池子：背错 ${missed} 个 · 新导入 ${fresh} 个`,
+    poolEmpty: "今天还没有背错或新导入的词。先去复习或录入几个。",
+    goReview: "去复习",
+    goImport: "去录入",
+    poolLoop: "池子答完会从头再来，越玩越熟。",
+    /** 词库太小，凑不出三个像样的干扰项 —— 这局没法开，直说，别让人对着白屏等 */
+    poolTooSmall:
+      "今天的词凑不出四选一（词太少，选不出三个不像的干扰项）。先多录几个词再玩。",
+
+    /** 局内 */
+    remaining: (n: number) => `还剩 ${n} 题`,
+    satietyLabel: "饱食度",
+    bowls: (n: number) => `吃了 ${n} 碗`,
+    streakLine: (n: number) => `连对 ${n}`,
+    bestStreak: (n: number) => `最高连对 ${n}`,
+    graceTitle: "它要咬屏幕了",
+    graceHint: (s: number) => `还有 ${s} 秒——吃一碗就救回来`,
+    quit: "不玩了",
+    mute: "静音",
+    unmute: "开声音",
+    keyboardHint: "1 / 2 / 3 / 4 或 A / B / C / D 选择",
+
+    /** 打饭机 */
+    bowlProgress: (filled: number, total: number) => `${filled} / ${total}`,
+    bowlReady: "这碗满了",
+    servingLabel: "正在打饭",
+    queueLabel: (n: number) => `旁边排着 ${n} 碗`,
+    queueFull: "台子摆不下了，先吃吧",
+
+    /**
+     * 打饭机报进度：每打进一勺说一句。
+     * 索引 = 这一碗装到第几个 - 1（1/5 → 第 0 句，4/5 → 第 3 句）。
+     * 语气照抄桌宠人格：自称「人家」，会撒娇也会嘴硬，但绝不说教。
+     */
+    scoopLine: [
+      "一勺。这才哪到哪。",
+      "两勺了，人家才开始热身。",
+      "三勺……手别抖啊。",
+      "四勺！差一勺就满，快！",
+    ],
+    /** 整碗打满时的一句 */
+    bowlDoneLine: [
+      "满碗！人家开动了——",
+      "这碗归人家了。",
+      "端走端走，下一碗！",
+      "刚好五勺，一点不差。",
+    ],
+
+    /** 催促台词：答错时随机说一句。同一句 4 题内不重复。 */
+    nag: [
+      "啊——饭掉了！",
+      "这一勺没接住……",
+      "再来！人家碗还空着。",
+      "你确定？人家看不对。",
+      "快一点，人家饿了。",
+      "别停啊，前面还有四勺。",
+      "手滑了？那不算。",
+      "人家等得饭都凉了。",
+    ],
+    /** 饿到 0 之后的台词 */
+    hungryNag: [
+      "人家要咬屏幕了！",
+      "最后一碗！快！",
+      "没得吃了……那就吃这个画面。",
+      "饿到人家尾巴都软了。",
+    ],
+
+    /** 结算 */
+    overTitle: "屏幕被吃掉了",
+    quitTitle: "这局先到这",
+    overEaten: "肥鱼把整个画面吞了下去。",
+    overGaveUp: "你自己收手了。肥鱼还没吃饱。",
+    resultBowls: "吃了",
+    resultBowlsUnit: "碗",
+    resultCorrect: "答对",
+    resultWrong: "答错",
+    resultBest: "最高连对",
+    resultSurvived: "活了",
+    resultUnit: "题",
+    resultTimeUnit: "",
+    again: "再来一局",
+    backHome: "回首页",
+    overHint: "这一局不进复习记录，你的排程没被动过。",
+
+    /** 设置 */
+    settingsTitle: "游戏模式",
+    defaultDifficulty: "默认难度",
+    soundToggle: "音效",
+    soundToggleDesc: "默认关。开着才有吃饭的咕噜声。",
+    settingsHint: "只是一局小游戏：玩完不写复习记录、不改下次到期，排程完全不受影响。",
+  },
   common: {
     ok: "好",
     cancel: "取消",

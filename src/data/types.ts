@@ -46,6 +46,24 @@ export interface SenseRow {
   created_at: number;
 }
 
+/** 游戏模式：今日池子里的一个词（词条 + 它的 L1 释义行） */
+export interface GamePoolWord extends WordRow {
+  senses: SenseRow[];
+}
+
+/**
+ * 游戏模式的今日池子。
+ *
+ * 两个来源**分开返回**，合并去重交给 domain/game/pool.ts 做纯函数：
+ * 放在 SQL 里合并，就没法单测「错词优先」这条规则，也说不清结算页那个数字从哪来。
+ */
+export interface GamePoolSnapshot {
+  /** 今天在复习页被标了 Again 的词 */
+  missed: GamePoolWord[];
+  /** 今天新导入的词 */
+  fresh: GamePoolWord[];
+}
+
 /** 词条 + 它的义项（UI 主要用这个） */
 export interface WordWithSenses extends WordRow {
   senses: SenseRow[];

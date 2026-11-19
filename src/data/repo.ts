@@ -7,6 +7,7 @@
 import type { Rating } from "ts-fsrs";
 import type {
   ExportBundle,
+  GamePoolSnapshot,
   HomeStats,
   ImportMode,
   ImportPlan,
@@ -14,7 +15,8 @@ import type {
   SenseOrigin,
   WordRow,
   WordWithSenses,
-} from "../data/types.ts";
+} from "./types.ts";
+import type { DistractorCandidate } from "../domain/game/types.ts";
 
 export interface ImportCommitResult {
   insertedWords: number;
@@ -57,6 +59,26 @@ export interface Repo {
    * 「今天录的」是一条时间区间查询，翻页式的搜索结果排不出这个语义。
    */
   listTodayNewWords(today: string): Promise<WordRow[]>;
+
+  // ---------- 游戏模式 ----------
+  /**
+   * 游戏模式的今日池子 —— **只读**。
+   *
+   * 一次返回两个来源（今天背错的词 / 今天新导入的词）**连同它们的 L1 释义**，
+   * 让出题层不用再逐词回查。合并去重与洗牌在 domain/game/pool.ts 里是纯函数，
+   * 这里只负责按 day_boundary_hour 划天、把行拼成词。
+   *
+   * 为什么不像 listMissedToday 那样只返回 WordRow：游戏每题都要释义，
+   * 逐词再查一次 senses 会变成 N+1 次 IPC（§7.5 明确禁止）。
+   */
+  gameTodayPool(today: string): Promise<GamePoolSnapshot>;
+  /**
+   * 全库干扰项候选，随机取 limit 条。只取 layer = 1 的义项。
+   *
+   * ORDER BY RANDOM() 在 1 万词条量级下是毫秒级（性能预算 §8.1），
+   * 不需要额外建索引或做分段抽样。
+   */
+  listDistractors(limit?: number): Promise<DistractorCandidate[]>;
 
   // ---------- 录入 ----------
   /** 解析 + 比对已有词条，产出预览；不写库 */

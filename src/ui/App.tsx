@@ -10,11 +10,13 @@ import { TodayPage } from "./pages/TodayPage.tsx";
 import { ImportPage } from "./pages/ImportPage.tsx";
 import { SearchPage } from "./pages/SearchPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
+import { GamePage } from "./pages/GamePage.tsx";
 
 const NAV: Array<{ page: Page; label: string }> = [
   { page: "home", label: t.nav.home },
   { page: "import", label: t.nav.import },
   { page: "search", label: t.nav.search },
+  { page: "game", label: t.game.nav },
   { page: "settings", label: t.nav.settings },
 ];
 
@@ -45,6 +47,15 @@ export function App() {
     return (
       <div className="h-full">
         <TodayPage />
+      </div>
+    );
+  }
+
+  // 游戏模式同样全屏：它是一个明亮的小世界，不该被暗色的顶部导航切一刀
+  if (page === "game") {
+    return (
+      <div className="h-full">
+        <GamePage />
       </div>
     );
   }
