@@ -3,6 +3,106 @@
 本项目的所有重要变更都记录在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.0] - 2026-11-19
+
+把「喂肥鱼」整个重做了一遍：**画面不再由代码绘制，全部换成图片与视频素材**，
+玩法从「答对一次吃一口」改成**打饭机**——答对一个词打一勺，五个词打满一碗。
+
+### 变更
+
+- **游戏页换成素材驱动的场景**（`src/ui/game/` 与 `public/pet/`）。
+  角色不再是 SVG 重绘的鲸鱼娘，而是桌宠工程里现成的 VP9-alpha 透明 webm
+  （待机 / 吃白饭 / 开心 / 饿了 / 被吓到，640×360 / 24fps），
+  由 `FatFish.tsx` 按实测包围盒（`x 207..429, y 60..332`）放大并负位移裁掉留白，
+  换片不跳位。删除了 `Whale.tsx` 与 `whale.css`。
+- **打饭机**（`RiceDispenser.tsx`）：机器本体、饭碗、掉饭粒都是生图后抠白转成的 webp
+  （`public/pet/props/`），机器下方五格灯表示这碗装到第几勺。
+- **玩法改成一碗五词**：`config.ts` 新增 `WORDS_PER_BOWL = 5` 与 `BOWL_SATIETY`。
+  `GameState.served` 的含义从「答对几次」改成**真正吃进嘴的碗数**，
+  新增 `serving`（正在接饭的那碗）、`pending`（打满排在台上的碗）、`bowlsMade`。
+- **多碗排队**：打满几碗台子上就摆几碗，肥鱼饿了就一碗一碗吃，
+  吃的时候播「吃白饭」片段。台子上限 `MAX_PENDING_BOWLS = 5`。
+- **话术换成打饭主题**（`i18n.ts` + 新增 `domain/game/lines.ts`）：
+  `scoopLine` 按勺报进度（「三勺……手别抖啊。」），`bowlDoneLine` 是装满时的台词；
+  `pickLine` 抽成纯函数（窗口内不重复），`bowlProgressLine` 按勺数取。
+  语气照桌宠人格：自称「人家」，会撒娇也会嘴硬，但不说教。
+- **音效分两层**（`sfx.ts`）：吃 / 开局 / 答错用桌宠自带的 wav，
+  掉勺、装满、宽限期提示继续用 Web Audio 现场合成。
+  新增 `preloadSfx()`，第一次开声音时解码好，避免首响延迟。
+
+### 修复
+
+- `answer()` 曾经顺手调 `eatBowl`，而 UI 播完吃动画又调一次 —— **一碗被吃两遍**。
+  现在 `answer()` 只负责把碗打出来，吃归 UI 播完动画后调 `eatBowl`。
+- `eatBowl()` 在宽限期里不退出 `grace`，导致「明明吃到了却仍被倒计时吃掉」。
+  现在吃到一碗就回 `playing` 并清零 `graceMsLeft`。
+- 透明 webm 在切后台 / 首帧未解码时会被 WebView 自己暂停，
+  `FatFish.tsx` 补了 `visibilitychange` / `focus` / `pointerdown` 三个续播点。
+
+### 素材与许可
+
+- 角色动画与音效来自 `D:\dsh-pet-standalone-webm-chat`（角色 OC「溟月」，
+  原仓库 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)），
+  按 CC BY-NC-SA 类条款**仅限个人非商业使用**。
+- 道具图由文生图生成（hunyuan-image-alpha，1536×1024，本次 6.46 积分），
+  出图后脚本抠白、切分、转 webp。来路与限制记在 `public/pet/NOTICE.md`。
+
+### 测试
+
+**352 项全绿**（v0.5.0 是 350 项）。`test/game.test.ts` 重写为 64 项，盯新口径：
+五勺一碗、打满后台面上多一碗、`answer` 不偷吃、`eatBowl` 封顶 100、
+宽限期吃一碗真的回 `playing`、队列超过上限丢最早的、台词窗口不重复。
+
+## [0.5.0] - 2026-11-16
+
+本轮加的是一局**游戏**：背单词喂肥鱼。它刻意站在排程器之外 ——
+不写 `review_logs`、不动 `fsrs_*`、不写 `sessions`，玩死一局也影响不到任何词的到期日。
+
+### 新增
+
+- **游戏模式「喂肥鱼」**（`src/ui/pages/GamePage.tsx`，全屏页，顶部导航 + 首页入口）。
+  四选一：答对 → 肥鱼吃一碗饭（饱食度 +20，封顶 100）；答错 → 没饭吃、它催你一句。
+  饱食度按难度匀速掉（易 12s/格 · 中 8s/格 · 难 5s/格，5 格满），
+  掉到 0 进宽限期（易 12s · 中 10s · 难 8s），宽限期内答对立刻救回来，
+  超时才被它把画面吞掉 → 结算 → 再来一局。
+- `domain/game/hunger.ts`：饥饿状态机纯函数 `startGame / tick / answer / giveUp`。
+  时间由 UI 的 rAF 以 `elapsedMs` 传入，domain 侧零 `Date.now()`，整套逻辑可在 vitest 里零时钟测试。
+- `domain/game/quiz.ts`：出题。英→中与中→英随机交替；干扰项来自全库，
+  抽到就与正确答案做**防重叠**比对（归一化后互相包含、或共享 ≥2 个连续汉字就重抽），
+  同一条词的释义不会变成它自己的干扰项；凑不齐 3 个合格干扰项时**返回 null 跳过这个词**，
+  宁可少出一题，也不出「两个都对」的废题。
+- `domain/game/pool.ts`：今日池子 = 今天背错的词 ∪ 今天新导入的词，按 `word.id` 去重（错词优先）后洗牌。
+  只用 L1 义项 —— L2 补充释义在 `fsrs_reps >= 3` 之前在复习页是不可见的，不能先在游戏里露脸。
+- `Repo.gameTodayPool(today)` / `Repo.listDistractors(limit)`：两条只读取数。
+  前者一次把两个来源连同 L1 释义查回来（不做 N+1 次 IPC），后者用 `ORDER BY RANDOM()` 抽干扰项。
+- `src/ui/game/Whale.tsx` + `whale.css`：鲸鱼娘，纯 SVG + CSS，八种状态（idle / happy / eating /
+  hungry / tremble / burp / swallow / over）。造型语言照 `docs/游戏模式-鲸鱼娘美术规范.md` 重画
+  —— 原素材不在任何开源许可范围内，只能照着比例与配色重绘。
+- `src/ui/game/sfx.ts`：Web Audio 现场合成的音效（吃饭、打嗝、答错、宽限警告、吞屏）。
+  零音频文件、零版权风险；**默认静音**。
+- `src/ui/game/gameSession.ts`：游戏会话态独立成一个 zustand store，
+  所以离开这一页再回来是**接着吃**，不是重置，也不是按真实时间补算。
+- 设置页新增「游戏模式」一组：默认难度、音效开关（键 `game_difficulty` / `game_sound`）。
+
+### 关键设计：为什么答错不扣血
+
+答错已经丢了一次喂食机会，再叠加扣血等于把同一次失误罚两遍。
+调研（`docs/oss-scout-喂鲸鱼资产.md` 与团队调研报告）里 Duolingo Energy 的反例说明，
+**零失误也会被扣**的设计会直接劝退用户。所以这里只有「没吃到」，没有「倒扣」。
+同理：离开页面即冻结、重开永远满格、被吃掉只终结**这一局**，不产生任何学习数据上的后果。
+
+### 测试
+
+**350 项全绿**（v0.4.0 是 279 项，本轮 +71）。
+
+- `test/game.test.ts` **新增 62 项**，盯 domain 纯函数：三档掉速、归零进宽限而非直接结束、
+  宽限内答对回血、+20 封顶且满食时 `served` 不增、答错不扣血、`bestStreak` 记历史最高、
+  非法 `elapsedMs` 幂等、池子去重与错词优先、最近 3 题不重复、干扰项三重不重复、
+  凑不齐时返回 null。
+- `test/repo.integration.test.ts` **新增 9 项**跑真实 SQLite：两个来源各自返回且都带 L1 释义、
+  边界小时与 `listMissedToday` 走同一条时间轴、`listDistractors` 只给 L1、limit 越界不崩、
+  以及「查完 `words` 与 `review_logs` 一行都没变」。
+
 ## [0.4.0] - 2026-11-11
 
 本轮补上「录完当天就能再看一眼今天背的词」——**只读回看，不是复习**。
@@ -205,6 +305,8 @@
   当前交付的是免安装绿色版，拷整个文件夹即可运行。
 - AI 旁路（补义项 / 例句 / 辨析）未实现，`ai_enabled` 设置项留位。
 
+[0.6.0]: https://github.com/zwq-wd/study/releases/tag/v0.6.0
+[0.5.0]: https://github.com/zwq-wd/study/releases/tag/v0.5.0
 [0.4.0]: https://github.com/zwq-wd/study/releases/tag/v0.4.0
 [0.3.0]: https://github.com/zwq-wd/study/releases/tag/v0.3.0
 [0.2.0]: https://github.com/zwq-wd/study/releases/tag/v0.2.0
