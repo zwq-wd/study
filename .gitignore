@@ -16,6 +16,9 @@ src-tauri/gen/
 *.json.bak
 backup/
 
+# 本地打包产物（安装包体积大，走 Release 附件，不进仓库）
+/releases/
+
 # 密钥
 .env
 .env.*
