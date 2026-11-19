@@ -3,6 +3,36 @@
 本项目的所有重要变更都记录在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.1] - 2026-11-19
+
+修复导入时报 `error returned from database: (code: 5) database is locked`。
+
+### 修复
+
+- **根因**：plugin-sql 底下是 sqlx 的**连接池**（默认 10 条连接），`execute` 每次都
+  「取一条 → 跑 → 归还」，连续两条语句**不保证落在同一条连接上**。
+  于是 `withTransaction` 里的时序变成：`BEGIN IMMEDIATE` 在连接 A 上拿到写锁 →
+  A 归还进池（锁仍在它身上）→ 下一条语句被派给连接 B → B 处于 autocommit，
+  直接发起写入 → 立刻 `SQLITE_BUSY (code 5)`。
+- 这不是「busy_timeout 太小」：它只会等**别人**，不会等**自己池子里**那条握着锁
+  的连接。所以调大超时没用；单纯重试也没用 —— 只要 `BEGIN` 与后续语句还落在
+  不同连接上，每轮重试都会以同样方式失败（`test/lock.test.ts` 里用按 sqlx 真实
+  行为建模的假池子把这条时序钉死了）。
+- **修法**：`db.ts` 给 `Database` 套一层**全局串行代理** —— 同一时刻只有一条语句
+  在飞，池里就只会用到一条连接，`BEGIN` 与它后面的语句必然复用同一条，事务语义
+  才真的成立。另外在 `tx.ts` 补了 BUSY 退避重试（约 2s），兜住外部进程短暂占锁。
+- 代价可以忽略：这是单用户桌面应用，写入本来就是「一次一屏」的小事务。
+
+### 测试
+
+**359 项全绿**（v0.6.0 是 352 项）。新增 `test/lock.test.ts` 7 项：
+认出 code 5、不误判其它错误、复现「不串行时并发事务必 BUSY」、
+串行后两个并发事务都成功且全程只用一条连接、事务体的语句不会被别的事务插进来、
+事务体抛错时真的 ROLLBACK。
+
+另外在真实数据库上验证过：旧构建（空闲状态）会一直持有写锁，外部连
+`BEGIN IMMEDIATE` 都拿不到；新构建运行中，外部连续 6 次写入 6 次成功、0 次 BUSY。
+
 ## [0.6.0] - 2026-11-19
 
 把「喂肥鱼」整个重做了一遍：**画面不再由代码绘制，全部换成图片与视频素材**，
@@ -305,6 +335,7 @@
   当前交付的是免安装绿色版，拷整个文件夹即可运行。
 - AI 旁路（补义项 / 例句 / 辨析）未实现，`ai_enabled` 设置项留位。
 
+[0.6.1]: https://github.com/zwq-wd/study/releases/tag/v0.6.1
 [0.6.0]: https://github.com/zwq-wd/study/releases/tag/v0.6.0
 [0.5.0]: https://github.com/zwq-wd/study/releases/tag/v0.5.0
 [0.4.0]: https://github.com/zwq-wd/study/releases/tag/v0.4.0
