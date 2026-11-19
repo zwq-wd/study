@@ -260,7 +260,7 @@ export class SqliteRepo implements Repo {
         ],
       );
 
-      await db.execute(
+      await tx.execute(
         `INSERT INTO review_logs
            (word_id, rating, state_before, state_after, due_after, stability_after,
             difficulty_after, elapsed_days, reviewed_at, session_id)

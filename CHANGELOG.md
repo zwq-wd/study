@@ -3,6 +3,32 @@
 本项目的所有重要变更都记录在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.3] - 2026-11-19
+
+修好复习页「点不了下一张」：`settleWord` 的事务体里漏改了一处 `db` → `tx`。
+
+### 修复
+
+- v0.6.2 把事务改成「整段占锁 + 事务体走直连通道 tx」时，`settleWord` 里
+  更新 `words` 用的是 `tx`，但紧接着插 `review_logs` 那条**还写着外层的 `db.execute`**。
+  外层 `db` 会先排队等锁，而锁正被这个事务拿着 → 永远等不到。
+- 表现出来就是复习页：中文出来了、两个按钮都在，点「背对了 / 背错了」**没反应**，
+  `advanceLockRef` 也不会释放，于是下一张永远出不来。
+- 数据库里能直接看到现场：卡住那两次会话 `shown=0, again=0, ended_at=NULL`。
+- 修法：把那一处也改成 `tx.execute`，事务体里所有语句统一走 `tx`。
+
+### 测试
+
+**365 项全绿**（v0.6.2 是 363 项）。
+
+- 新增 `test/review-settle.test.ts` 2 项：用一个「事务持锁期间若还用外层 db 就
+  立刻抛 REENTRY」的假 driver 把这种写法钉死 —— 它不会挂住，而是直接失败，
+  所以以后谁再把 `db.execute` 写回事务体，CI 会当场变红。
+- 覆盖单张结算与连续结算多张（复习页逐张推进的真实路径）。
+- 已验证有约束力：把那一处改回 `db.execute`，两条测试立刻失败。
+
+另外确认导入已恢复正常：用户库里 `words` 从 835 增长到 885，`review_logs` 2131 条。
+
 ## [0.6.2] - 2026-11-19
 
 修好 v0.6.1 引入的**导入死锁**，并补上真正的事务隔离。
@@ -368,6 +394,7 @@
   当前交付的是免安装绿色版，拷整个文件夹即可运行。
 - AI 旁路（补义项 / 例句 / 辨析）未实现，`ai_enabled` 设置项留位。
 
+[0.6.3]: https://github.com/zwq-wd/study/releases/tag/v0.6.3
 [0.6.2]: https://github.com/zwq-wd/study/releases/tag/v0.6.2
 [0.6.1]: https://github.com/zwq-wd/study/releases/tag/v0.6.1
 [0.6.0]: https://github.com/zwq-wd/study/releases/tag/v0.6.0
